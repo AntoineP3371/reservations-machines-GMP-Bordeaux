@@ -145,6 +145,28 @@
   .machine-item.drag-over{border:2px solid var(--admin);background:var(--admin-light)}
   .drag-handle{cursor:grab;font-size:16px;color:var(--muted);padding:0 4px;user-select:none;flex-shrink:0}
   .drag-handle:active{cursor:grabbing}
+  /* Carousel config */
+  .carousel-page-config{background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px}
+  .carousel-page-config .page-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:700;font-size:.85rem;color:var(--admin)}
+  .carousel-machine-checks{display:flex;flex-wrap:wrap;gap:8px}
+  .carousel-machine-checks label{display:flex;align-items:center;gap:5px;font-size:.82rem;cursor:pointer;background:#fff;border:1px solid var(--border);border-radius:5px;padding:4px 8px}
+  .carousel-machine-checks input[type=checkbox]{cursor:pointer}
+  .btn-add-page{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1.5px dashed var(--admin);border-radius:7px;background:transparent;color:var(--admin);font-size:.82rem;font-weight:600;cursor:pointer;transition:background .15s;margin-top:8px}
+  .btn-add-page:hover{background:var(--admin-light)}
+  /* History panel */
+  .history-entry{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:.82rem}
+  .history-entry .hist-time{font-size:.72rem;color:var(--muted);margin-bottom:3px;font-weight:600}
+  .history-entry .hist-action{color:var(--text);line-height:1.4}
+  .history-entry .hist-details{color:var(--muted);font-size:.76rem;margin-top:2px}
+  .history-restore-btn{background:var(--admin-light);color:var(--admin-dark);border:1px solid var(--admin);border-radius:5px;padding:3px 9px;font-size:.75rem;font-weight:600;cursor:pointer;margin-top:6px}
+  .history-restore-btn:hover{background:var(--admin);color:#fff}
+  /* iCal export */
+  .ical-section{margin-bottom:16px}
+  .ical-section h3{font-size:.88rem;font-weight:700;color:var(--text);margin-bottom:8px}
+  .ical-item{display:flex;align-items:center;justify-content:space-between;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:8px 12px;margin-bottom:6px}
+  .ical-item-label{font-size:.82rem;font-weight:600;color:var(--text)}
+  .ical-copy-btn{background:var(--primary-light);color:var(--primary-dark);border:1px solid var(--primary);border-radius:5px;padding:4px 10px;font-size:.76rem;font-weight:600;cursor:pointer}
+  .ical-copy-btn:hover{background:var(--primary);color:#fff}
 </style>
 </head>
 <body>
@@ -166,6 +188,9 @@
   <span>Mode administrateur actif.</span>
   <button class="btn-manage" onclick="openMachineManager()">✏️ Gérer les machines</button>
   <button class="btn-manage" onclick="openOperateurManager()">👥 Gérer les opérateurs</button>
+  <button class="btn-manage" onclick="openCarouselConfig()">📺 Config carrousel</button>
+  <button class="btn-manage" onclick="openHistory()">🕐 Historique (48h)</button>
+  <button class="btn-manage" onclick="openIcalExport()">📅 Abonnements iCal</button>
   <button class="logout-btn" onclick="logoutAdmin()">Se déconnecter</button>
 </div>
 
@@ -217,6 +242,9 @@ let isAdmin       = false;
 let currentMon    = getMonday(new Date());
 let carouselTimer = null;
 let carouselIndex = 0;
+// Nouvelles variables
+let carouselPages = null;  // null = auto (3 machines/page), sinon tableau de tableaux de machines
+let history48h    = [];    // historique des 48 dernières heures
 
 // ─── TOAST ─────────────────────────────────────────────────────────────────────
 function showToast(msg, duration=2500){
@@ -294,31 +322,31 @@ async function loadDisabled(){
 // ─── SUPABASE : ÉCRITURE ───────────────────────────────────────────────────────
 async function dbAddBooking(machine,date,slot,data){
   const {error} = await sb.from('bookings').insert({machine,date,slot,...data});
-  if(error){ showToast('❌ Erreur lors de la réservation : '+error.message); return false; }
+  if(error){ showToast('❌ Erreur réservation : '+(error.message||JSON.stringify(error))); return false; }
   return true;
 }
 
 async function dbDeleteBooking(machine,date,slot){
   const {error} = await sb.from('bookings').delete().match({machine,date,slot});
-  if(error){ showToast('❌ Erreur suppression : '+error.message); return false; }
+  if(error){ showToast('❌ Erreur suppression : '+(error.message||JSON.stringify(error))); return false; }
   return true;
 }
 
 async function dbUpdateBooking(machine,date,slot,data){
   const {error} = await sb.from('bookings').update(data).match({machine,date,slot});
-  if(error){ showToast('❌ Erreur mise à jour : '+error.message); return false; }
+  if(error){ showToast('❌ Erreur mise à jour : '+(error.message||JSON.stringify(error))); return false; }
   return true;
 }
 
 async function dbAddDisabled(machine,date,slot){
   const {error} = await sb.from('disabled_slots').insert({machine,date,slot});
-  if(error && error.code!=='23505'){ showToast('❌ Erreur blocage : '+error.message); return false; }
+  if(error && error.code!=='23505'){ showToast('❌ Erreur blocage : '+(error.message||JSON.stringify(error))); return false; }
   return true;
 }
 
 async function dbDeleteDisabled(machine,date,slot){
   const {error} = await sb.from('disabled_slots').delete().match({machine,date,slot});
-  if(error){ showToast('❌ Erreur déblocage : '+error.message); return false; }
+  if(error){ showToast('❌ Erreur déblocage : '+(error.message||JSON.stringify(error))); return false; }
   return true;
 }
 
@@ -348,7 +376,10 @@ function openModal(html,fullscreen){
 function closeModal(){ document.getElementById("overlay").classList.remove("open"); document.getElementById("modal").classList.remove("fullscreen"); stopCarousel(); }
 function stopCarousel(){ if(carouselTimer){ clearInterval(carouselTimer); carouselTimer=null; } }
 function startMachineCarousel(){ stopCarousel(); if(!machines.length){ alert("Aucune machine."); return; } carouselIndex=0; openFullScreenCarouselPage(); carouselTimer=setInterval(nextCarouselPage,5000); }
-function getCarouselPages(){ var pages=[]; for(var i=0;i<machines.length;i+=3){ pages.push(machines.slice(i,i+3)); } return pages; }
+function getCarouselPages(){
+  if(carouselPages && carouselPages.length>0) return carouselPages;
+  var pages=[]; for(var i=0;i<machines.length;i+=3){ pages.push(machines.slice(i,i+3)); } return pages;
+}
 function nextCarouselPage(){ var pages=getCarouselPages(); carouselIndex=(carouselIndex+1)%pages.length; openFullScreenCarouselPage(); }
 function openFullScreenCarouselPage(){ openModal(buildFullscreenMachineAgenda(),true); }
 function getTwoWeekDays(){ var days=[]; var d=new Date(currentMon); while(days.length<10){ var day=new Date(d); if(day.getDay()!==0&&day.getDay()!==6) days.push(day); d.setDate(d.getDate()+1); } return days; }
@@ -498,6 +529,233 @@ async function saveMachines(){
   closeModal(); render(); showToast("✅ Machines enregistrées");
 }
 
+// ─── CAROUSEL PAGES CONFIG ────────────────────────────────────────────────────
+function openCarouselConfig(){
+  var pages = carouselPages && carouselPages.length>0 ? carouselPages : getCarouselPages();
+  var html = "<h2>📺 Configuration du carrousel</h2>"+
+    "<div class='meta'>Définissez quelles machines s'affichent sur chaque page du carrousel. Chaque page peut contenir une ou plusieurs machines.</div>"+
+    "<div id='carousel-pages-list'>";
+  pages.forEach(function(page,pi){
+    html += buildCarouselPageRow(page, pi, pages.length);
+  });
+  html += "</div>"+
+    "<button class='btn-add-page' onclick='addCarouselPage()'>+ Ajouter une page</button>"+
+    "<div class='modal-actions' style='margin-top:18px'>"+
+      "<button class='btn btn-close' onclick='closeModal()'>Annuler</button>"+
+      "<button class='btn btn-admin-ok' onclick='saveCarouselConfig()'>✔ Enregistrer</button>"+
+    "</div>";
+  openModal(html);
+}
+
+function buildCarouselPageRow(selectedMachines, pageIndex, total){
+  var checks = machines.map(function(m){
+    var checked = selectedMachines.includes(m) ? "checked" : "";
+    return "<label><input type='checkbox' class='cp-check' data-machine='"+esc(m)+"' "+checked+"> "+esc(m)+"</label>";
+  }).join("");
+  var removeBtn = total > 1 ? "<button class='icon-btn remove' style='margin-left:auto' onclick='removeCarouselPage("+pageIndex+")'>✕</button>" : "";
+  return "<div class='carousel-page-config' id='cprow-"+pageIndex+"'>"+
+    "<div class='page-header'>📄 Page "+(pageIndex+1)+" "+removeBtn+"</div>"+
+    "<div class='carousel-machine-checks'>"+checks+"</div>"+
+  "</div>";
+}
+
+function addCarouselPage(){
+  var list = document.getElementById('carousel-pages-list');
+  var pi = list.children.length;
+  var div = document.createElement('div');
+  div.innerHTML = buildCarouselPageRow([], pi, pi+1);
+  list.appendChild(div.firstChild);
+  // Renuméroter
+  renumberCarouselPages();
+}
+
+function removeCarouselPage(idx){
+  var list = document.getElementById('carousel-pages-list');
+  if(list.children.length <= 1){ alert("Il faut au moins une page."); return; }
+  list.children[idx].remove();
+  renumberCarouselPages();
+}
+
+function renumberCarouselPages(){
+  var list = document.getElementById('carousel-pages-list');
+  var rows = list.querySelectorAll('.carousel-page-config');
+  rows.forEach(function(row, i){
+    row.id = 'cprow-'+i;
+    var header = row.querySelector('.page-header');
+    // Mettre à jour numéro dans le label (sans toucher le bouton)
+    var removeBtn = row.querySelector('.icon-btn.remove');
+    if(removeBtn) removeBtn.setAttribute('onclick','removeCarouselPage('+i+')');
+    var headerText = header.innerHTML.replace(/Page \d+/,'Page '+(i+1));
+    header.innerHTML = headerText;
+  });
+}
+
+function saveCarouselConfig(){
+  var list = document.getElementById('carousel-pages-list');
+  var rows = list.querySelectorAll('.carousel-page-config');
+  var pages = [];
+  rows.forEach(function(row){
+    var checks = row.querySelectorAll('.cp-check:checked');
+    var mlist = [];
+    checks.forEach(function(cb){ mlist.push(cb.getAttribute('data-machine')); });
+    if(mlist.length > 0) pages.push(mlist);
+  });
+  if(pages.length === 0){ alert("Chaque page doit avoir au moins une machine sélectionnée."); return; }
+  carouselPages = pages;
+  // Sauvegarder en localStorage pour persistance
+  try{ localStorage.setItem('carouselPages', JSON.stringify(pages)); }catch(e){}
+  closeModal();
+  showToast("✅ Configuration du carrousel enregistrée");
+}
+
+function loadCarouselConfig(){
+  try{
+    var saved = localStorage.getItem('carouselPages');
+    if(saved) carouselPages = JSON.parse(saved);
+  }catch(e){}
+}
+
+// ─── HISTORIQUE 48H ───────────────────────────────────────────────────────────
+function addHistoryEntry(action, details, snapshotBookings, snapshotDisabled){
+  var entry = {
+    time: new Date().toISOString(),
+    action: action,
+    details: details,
+    bookings: JSON.parse(JSON.stringify(snapshotBookings||bookings)),
+    disabled: JSON.parse(JSON.stringify(snapshotDisabled||disabled))
+  };
+  history48h.unshift(entry);
+  // Garder seulement les entrées des 48 dernières heures
+  var cutoff = Date.now() - 48*60*60*1000;
+  history48h = history48h.filter(function(e){ return new Date(e.time).getTime() > cutoff; });
+  try{ localStorage.setItem('history48h', JSON.stringify(history48h)); }catch(e){}
+}
+
+function loadHistory48h(){
+  try{
+    var saved = localStorage.getItem('history48h');
+    if(saved){
+      var cutoff = Date.now() - 48*60*60*1000;
+      history48h = JSON.parse(saved).filter(function(e){ return new Date(e.time).getTime() > cutoff; });
+    }
+  }catch(e){}
+}
+
+function openHistory(){
+  if(history48h.length === 0){
+    openModal("<h2>🕐 Historique (48h)</h2><div class='meta'>Aucune modification enregistrée dans les 48 dernières heures.</div><div class='modal-actions'><button class='btn btn-close' onclick='closeModal()'>Fermer</button></div>");
+    return;
+  }
+  var html = "<h2>🕐 Historique des modifications (48h)</h2>"+
+    "<div class='meta'>Les "+history48h.length+" dernière(s) modification(s). Cliquez sur « Restaurer » pour revenir à un état antérieur.</div>"+
+    "<div style='max-height:60vh;overflow-y:auto;margin-top:12px'>";
+  history48h.forEach(function(entry, i){
+    var t = new Date(entry.time);
+    var timeStr = t.toLocaleDateString('fr-FR') + ' à ' + t.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
+    html += "<div class='history-entry'>"+
+      "<div class='hist-time'>"+esc(timeStr)+"</div>"+
+      "<div class='hist-action'>"+esc(entry.action)+"</div>"+
+      (entry.details ? "<div class='hist-details'>"+esc(entry.details)+"</div>" : "")+
+      "<button class='history-restore-btn' onclick='restoreHistory("+i+")'>↩ Restaurer cet état</button>"+
+    "</div>";
+  });
+  html += "</div><div class='modal-actions'><button class='btn btn-close' onclick='closeModal()'>Fermer</button></div>";
+  openModal(html);
+}
+
+async function restoreHistory(index){
+  if(!confirm("Restaurer le planning à cet état ? Les réservations et blocages actuels seront remplacés.")) return;
+  var entry = history48h[index];
+  showToast("⏳ Restauration en cours…");
+  closeModal();
+  var week = getWorkWeek();
+  var dates = week.map(function(d){ return fmt(d); });
+  // Supprimer réservations et blocages actuels de la semaine
+  for(var k in bookings){ var p=k.split("|"); if(dates.includes(p[1])){ await sb.from('bookings').delete().match({machine:p[0],date:p[1],slot:p[2]}); } }
+  for(var k2 in disabled){ var p2=k2.split("|"); if(dates.includes(p2[1])){ await sb.from('disabled_slots').delete().match({machine:p2[0],date:p2[1],slot:p2[2]}); } }
+  // Réinsérer depuis snapshot (uniquement les champs métier, sans id/created_at)
+  var snap = entry.bookings;
+  for(var k3 in snap){
+    var p3=k3.split("|");
+    if(!dates.includes(p3[1])) continue;
+    var r = snap[k3];
+    await sb.from('bookings').insert({
+      machine: p3[0], date: p3[1], slot: p3[2],
+      nom: r.nom||'', prenom: r.prenom||'',
+      operateur: r.operateur||'', projet: r.projet||'',
+      pin: r.pin||''
+    });
+  }
+  var snapD = entry.disabled;
+  for(var k4 in snapD){
+    var p4=k4.split("|");
+    if(dates.includes(p4[1])){ await sb.from('disabled_slots').insert({machine:p4[0],date:p4[1],slot:p4[2]}); }
+  }
+  await loadBookings(); await loadDisabled(); render();
+  showToast("✅ Planning restauré");
+}
+
+// ─── EXPORT iCAL ──────────────────────────────────────────────────────────────
+const ICAL_EDGE_URL = SUPABASE_URL + '/functions/v1/ical';
+
+function openIcalExport(){
+  var html = "<h2>📅 Abonnements iCal</h2>"+
+    "<div class='meta'>Cliquez sur <strong>S'abonner</strong> pour ouvrir votre application calendrier, ou <strong>Copier l'URL</strong> pour la coller manuellement dans Google Calendar → « Autres agendas » → « Via une URL ».</div>";
+
+  // Par machine
+  html += "<div class='ical-section'><h3>🏭 Par machine</h3>";
+  machines.forEach(function(m){
+    var httpsUrl = ICAL_EDGE_URL + '?type=machine&value=' + encodeURIComponent(m);
+    var webcalUrl = httpsUrl.replace(/^https?:\/\//, 'webcal://');
+    html += "<div class='ical-item'>"+
+      "<span class='ical-item-label'>"+esc(m)+"</span>"+
+      "<div style='display:flex;gap:6px'>"+
+        "<a href='"+webcalUrl+"' class='ical-copy-btn' style='text-decoration:none'>📆 S'abonner</a>"+
+        "<button class='ical-copy-btn' onclick='copyToClipboard(\""+jsesc(httpsUrl)+"\")'>📋 Copier l'URL</button>"+
+      "</div>"+
+    "</div>";
+  });
+  html += "</div>";
+
+  // Par opérateur
+  html += "<div class='ical-section'><h3>👤 Par opérateur</h3>";
+  operateurs.forEach(function(op){
+    var httpsUrl = ICAL_EDGE_URL + '?type=operateur&value=' + encodeURIComponent(op);
+    var webcalUrl = httpsUrl.replace(/^https?:\/\//, 'webcal://');
+    html += "<div class='ical-item'>"+
+      "<span class='ical-item-label'>"+esc(op)+"</span>"+
+      "<div style='display:flex;gap:6px'>"+
+        "<a href='"+webcalUrl+"' class='ical-copy-btn' style='text-decoration:none'>📆 S'abonner</a>"+
+        "<button class='ical-copy-btn' onclick='copyToClipboard(\""+jsesc(httpsUrl)+"\")'>📋 Copier l'URL</button>"+
+      "</div>"+
+    "</div>";
+  });
+  html += "</div>";
+
+  html += "<div style='background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 14px;font-size:.78rem;color:#15803d;margin-bottom:12px'>"+
+    "💡 <strong>Google Calendar :</strong> Autres agendas → + → Via une URL → coller l'URL https://<br>"+
+    "💡 <strong>Apple Calendar :</strong> Fichier → Nouvel abonnement → coller l'URL webcal://<br>"+
+    "💡 <strong>Outlook :</strong> Ajouter un calendrier → S'abonner via le web → coller l'URL https://"+
+  "</div>"+
+  "<div class='modal-actions'><button class='btn btn-close' onclick='closeModal()'>Fermer</button></div>";
+  openModal(html);
+}
+
+function copyToClipboard(text){
+  navigator.clipboard.writeText(text).then(function(){
+    showToast("📋 URL copiée !");
+  }).catch(function(){
+    // Fallback
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast("📋 URL copiée !");
+  });
+}
+
 // ─── OPERATEUR MANAGER ────────────────────────────────────────────────────────
 function openOperateurManager(){
   var rows=operateurs.map((op,i)=>"<div class='op-item' id='oprow-"+i+"'><input type='text' class='opname' id='opname-"+i+"' value='"+esc(op)+"' placeholder=\"Nom de l'opérateur\"><button class='icon-btn remove' onclick='removeOpRow("+i+")'>✕</button></div>").join("");
@@ -550,6 +808,9 @@ async function adminLockHalfDay(machine,date,period){
 // ─── ADMIN ACTIONS ────────────────────────────────────────────────────────────
 async function adminDel(key){
   var parts=key.split("|");
+  var r=bookings[key];
+  var detail = r ? (r.nom+' '+r.prenom+(r.projet?' — '+r.projet:'')) : key;
+  addHistoryEntry("Suppression réservation", parts[0]+' | '+parts[1]+' | '+parts[2]+' — '+detail, bookings, disabled);
   closeModal();
   await dbDeleteBooking(parts[0],parts[1],parts[2]);
   delete bookings[key];
@@ -557,11 +818,13 @@ async function adminDel(key){
 }
 async function adminLock(key){
   var parts=key.split("|");
+  addHistoryEntry("Blocage créneau", parts[0]+' | '+parts[1]+' | '+parts[2], bookings, disabled);
   await dbAddDisabled(parts[0],parts[1],parts[2]);
   disabled[key]=true; render(); showToast("🔒 Créneau bloqué");
 }
 async function adminUnlock(key){
   var parts=key.split("|");
+  addHistoryEntry("Déblocage créneau", parts[0]+' | '+parts[1]+' | '+parts[2], bookings, disabled);
   await dbDeleteDisabled(parts[0],parts[1],parts[2]);
   delete disabled[key]; render(); showToast("🔓 Créneau débloqué");
 }
@@ -662,7 +925,7 @@ async function submitBook(machine,date,slot){
   showToast("💾 Enregistrement…");
   var key=machine+"|"+date+"|"+slot;
   var ok=await dbAddBooking(machine,date,slot,payload);
-  if(ok){ bookings[key]=payload; closeModal(); render(); showToast("✅ Réservation confirmée"); }
+  if(ok){ bookings[key]=payload; addHistoryEntry("Nouvelle réservation", machine+' | '+date+' | '+slot+' — '+payload.nom+' '+payload.prenom+(payload.projet?' ('+payload.projet+')':'')); closeModal(); render(); showToast("✅ Réservation confirmée"); }
 }
 
 function tryDel(key,storedPin){
@@ -715,7 +978,7 @@ async function submitEditBooking(key){
   var data={nom:document.getElementById("edit-nom").value.trim(),prenom:document.getElementById("edit-prenom").value.trim(),operateur:opVal,projet:document.getElementById("edit-projet").value.trim()};
   showToast("💾 Mise à jour…");
   var ok=await dbUpdateBooking(parts[0],parts[1],parts[2],data);
-  if(ok){ Object.assign(bookings[key],data); closeModal(); render(); showToast("✅ Réservation modifiée"); }
+  if(ok){ addHistoryEntry("Modification réservation", parts[0]+' | '+parts[1]+' | '+parts[2]+' — '+data.nom+' '+data.prenom); Object.assign(bookings[key],data); closeModal(); render(); showToast("✅ Réservation modifiée"); }
 }
 
 // ─── CSV ───────────────────────────────────────────────────────────────────────
@@ -764,11 +1027,7 @@ function render(){
         } else {
           cls="free"+tc; content="<div class='slot-time'>"+slot+"</div><div class='slot-free-label'>Libre</div>";
           if(isAdmin){
-            var isMorning=SLOT_AM.includes(slot);
-            var halfBtn=isMorning
-              ?"<button class='admin-slot-btn lock-am' title='Bloquer tout le matin' onclick='event.stopPropagation();adminLockHalfDay(\""+jsesc(machine)+"\",\""+fmt(day)+"\",\"am\")'>AM</button>"
-              :"<button class='admin-slot-btn lock-pm' title='Bloquer tout l\\'après-midi' onclick='event.stopPropagation();adminLockHalfDay(\""+jsesc(machine)+"\",\""+fmt(day)+"\",\"pm\")'>PM</button>";
-            adm="<div class='slot-admin-actions'>"+halfBtn+"<button class='admin-slot-btn lock' title='Bloquer ce créneau' onclick='event.stopPropagation();adminLock(\""+jsesc(key)+"\")'>🔒</button></div>";
+            adm="<div class='slot-admin-actions'><button class='admin-slot-btn lock' title='Bloquer ce créneau' onclick='event.stopPropagation();adminLock(\""+jsesc(key)+"\")'>🔒</button></div>";
           }
         }
         var click=bl?"":" onclick='book(\""+jsesc(machine)+"\",\""+fmt(day)+"\",\""+slot+"\")'";
@@ -789,6 +1048,8 @@ function render(){
 }
 
 // ─── DÉMARRAGE ─────────────────────────────────────────────────────────────────
+loadCarouselConfig();
+loadHistory48h();
 loadAll();
 </script>
 </body>
