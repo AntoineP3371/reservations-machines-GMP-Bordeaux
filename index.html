@@ -256,7 +256,7 @@ function showToast(msg, duration=2500){
 
 // ─── DATE ──────────────────────────────────────────────────────────────────────
 function getMonday(d){ d=new Date(d); var day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); d.setHours(0,0,0,0); return d; }
-function fmt(d){ return d.toISOString().split("T")[0]; }
+function fmt(d){ var y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),j=String(d.getDate()).padStart(2,'0'); return y+'-'+m+'-'+j; }
 function isToday(d){ var t=new Date(); return d.getFullYear()===t.getFullYear()&&d.getMonth()===t.getMonth()&&d.getDate()===t.getDate(); }
 function getWorkWeek(){ var days=[]; for(var i=0;i<5;i++){ var d=new Date(currentMon); d.setDate(d.getDate()+i); days.push(d); } return days; }
 
