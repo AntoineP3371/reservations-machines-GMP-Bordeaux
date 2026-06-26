@@ -238,6 +238,7 @@ const DEFAULT_COLORS = ["#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec48
 let machines      = [];
 let machineColors = {};
 let operateurs    = [];
+let operateursPhone = {}; // { nom: { phone, apikey } }
 let bookings      = {};   // clé: "machine|date|slot"
 let disabled      = {};   // clé: "machine|date|slot"
 let isAdmin       = false;
@@ -270,6 +271,7 @@ async function goToday(){ currentMon=getMonday(new Date()); await loadBookings()
 async function loadAll(){
   await Promise.all([loadMachines(), loadOperateurs(), loadBookings(), loadDisabled()]);
   render();
+  startNotificationChecker();
 }
 
 async function loadMachines(){
@@ -295,11 +297,14 @@ async function loadOperateurs(){
   if(error){ console.error(error); return; }
   if(!data || data.length===0){
     operateurs = ["Ligne 1","Ligne 2","Ligne 3","Maintenance","R&D"];
+    operateursPhone = {};
     for(const op of operateurs){
-      await sb.from('operateurs').insert({name:op});
+      await sb.from('operateurs').insert({name:op, phone:'', apikey:''});
     }
   } else {
     operateurs = data.map(r=>r.name);
+    operateursPhone = {};
+    data.forEach(r=>{ operateursPhone[r.name] = {phone: r.phone||'', apikey: r.apikey||''}; });
   }
 }
 
@@ -359,10 +364,11 @@ async function dbSaveMachines(arr,colors){
   }
 }
 
-async function dbSaveOperateurs(arr){
+async function dbSaveOperateurs(arr, phoneMap){
   await sb.from('operateurs').delete().neq('name','__never__');
   for(const op of arr){
-    await sb.from('operateurs').insert({name:op});
+    const info = (phoneMap && phoneMap[op]) || {};
+    await sb.from('operateurs').insert({name:op, phone: info.phone||'', apikey: info.apikey||''});
   }
 }
 
@@ -771,11 +777,29 @@ function fallbackCopy(text){
 }
 
 // ─── OPERATEUR MANAGER ────────────────────────────────────────────────────────
+function opRowHtml(i, name, phone, apikey){
+  return "<div class='op-item' id='oprow-"+i+"' style='flex-direction:column;align-items:stretch;gap:6px'>"+
+    "<div style='display:flex;align-items:center;gap:8px'>"+
+      "<input type='text' class='opname' id='opname-"+i+"' value='"+esc(name)+"' placeholder=\"Nom de l'opérateur\">"+
+      "<button class='icon-btn remove' onclick='removeOpRow("+i+")'>✕</button>"+
+    "</div>"+
+    "<div style='display:flex;gap:8px'>"+
+      "<input type='tel' class='opphone' id='opphone-"+i+"' value='"+esc(phone)+"' placeholder='📱 +336… (WhatsApp)' style='flex:1;border:1.5px solid var(--border);border-radius:6px;padding:5px 9px;font-size:.82rem;color:var(--text);background:#fff;outline:none;font-family:inherit'>"+
+      "<input type='text' class='opapikey' id='opapikey-"+i+"' value='"+esc(apikey)+"' placeholder='Clé API CallMeBot' style='flex:1;border:1.5px solid var(--border);border-radius:6px;padding:5px 9px;font-size:.82rem;color:var(--text);background:#fff;outline:none;font-family:inherit'>"+
+    "</div>"+
+  "</div>";
+}
 function openOperateurManager(){
-  var rows=operateurs.map((op,i)=>"<div class='op-item' id='oprow-"+i+"'><input type='text' class='opname' id='opname-"+i+"' value='"+esc(op)+"' placeholder=\"Nom de l'opérateur\"><button class='icon-btn remove' onclick='removeOpRow("+i+")'>✕</button></div>").join("");
+  var rows=operateurs.map((op,i)=>{ var info=operateursPhone[op]||{}; return opRowHtml(i,op,info.phone||'',info.apikey||''); }).join("");
   openModal(
     "<h2>👥 Gérer les opérateurs</h2>"+
-    "<div class='meta'>Ces opérateurs seront proposés lors des réservations.</div>"+
+    "<div class='meta'>Pour chaque opérateur, vous pouvez renseigner son numéro WhatsApp et sa clé API CallMeBot. Il recevra alors automatiquement une notification WhatsApp <strong>20 minutes avant</strong> chaque créneau qui le concerne.</div>"+
+    "<div style='background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:12px 14px;margin:10px 0;font-size:.82rem;color:#166534;line-height:1.6'>"+
+      "<strong>📲 Comment obtenir la clé API ?</strong> L'opérateur doit, depuis son téléphone :<br>"+
+      "1. Enregistrer le numéro <strong>+34 613 01 49 37</strong> dans ses contacts WhatsApp<br>"+
+      "2. Lui envoyer le message : <code style='background:#dcfce7;padding:1px 5px;border-radius:3px'>I allow callmebot to send me messages</code><br>"+
+      "3. CallMeBot répond avec sa clé API à copier ici"+
+    "</div>"+
     "<div class='machine-list' id='oplist'>"+rows+"</div>"+
     "<button class='btn-add' onclick='addOpRow()'>+ Ajouter un opérateur</button>"+
     "<div class='modal-actions' style='margin-top:18px'>"+
@@ -784,15 +808,21 @@ function openOperateurManager(){
     "</div>"
   );
 }
-function addOpRow(){ var list=document.getElementById("oplist"); var i=list.children.length; var d=document.createElement("div"); d.className="op-item"; d.id="oprow-"+i; d.innerHTML="<input type='text' class='opname' id='opname-"+i+"' placeholder=\"Nom de l'opérateur\"><button class='icon-btn remove' onclick='removeOpRow("+i+")'>✕</button>"; list.appendChild(d); }
+function addOpRow(){ var list=document.getElementById("oplist"); var i=list.children.length; list.insertAdjacentHTML('beforeend', opRowHtml(i,'','','')); }
 function removeOpRow(i){ var r=document.getElementById("oprow-"+i); if(r) r.remove(); }
 async function saveOperateurs(){
-  var inputs=document.querySelectorAll("#oplist .opname");
-  var arr=[];
-  inputs.forEach(inp=>{ var v=inp.value.trim(); if(v) arr.push(v); });
+  var nameInputs=document.querySelectorAll("#oplist .opname");
+  var arr=[]; var phoneMap={};
+  nameInputs.forEach((inp,idx)=>{
+    var v=inp.value.trim(); if(!v) return;
+    arr.push(v);
+    var phoneEl=document.getElementById("opphone-"+idx);
+    var apikeyEl=document.getElementById("opapikey-"+idx);
+    phoneMap[v]={ phone: phoneEl?phoneEl.value.trim():'', apikey: apikeyEl?apikeyEl.value.trim():'' };
+  });
   showToast("💾 Enregistrement…");
-  await dbSaveOperateurs(arr);
-  operateurs=arr; closeModal(); showToast("✅ Opérateurs enregistrés");
+  await dbSaveOperateurs(arr, phoneMap);
+  operateurs=arr; operateursPhone=phoneMap; closeModal(); showToast("✅ Opérateurs enregistrés");
 }
 
 function buildOperateurSelect(){
@@ -934,7 +964,8 @@ async function submitBook(machine,date,slot){
   // Ajouter nouvel opérateur si besoin
   if(document.getElementById("foperateur").value==="__new__" && opVal && !operateurs.includes(opVal)){
     operateurs.push(opVal);
-    await sb.from('operateurs').insert({name:opVal});
+    operateursPhone[opVal] = {phone:'', apikey:''};
+    await sb.from('operateurs').insert({name:opVal, phone:'', apikey:''});
   }
   showToast("💾 Enregistrement…");
   var key=machine+"|"+date+"|"+slot;
@@ -987,7 +1018,7 @@ async function submitEditBooking(key){
   var v1=vfEdit("edit-nom","edit-nom-err"),v2=vfEdit("edit-prenom","edit-prenom-err"),v3=vfEditOp(),v4=vfEdit("edit-projet","edit-projet-err");
   if(!v1||!v2||!v3||!v4) return;
   var opVal=getEditOpValue();
-  if(document.getElementById("edit-operateur").value==="__new__" && opVal && !operateurs.includes(opVal)){ operateurs.push(opVal); await sb.from('operateurs').insert({name:opVal}); }
+  if(document.getElementById("edit-operateur").value==="__new__" && opVal && !operateurs.includes(opVal)){ operateurs.push(opVal); operateursPhone[opVal]={phone:'',apikey:''}; await sb.from('operateurs').insert({name:opVal, phone:'', apikey:''}); }
   var parts=key.split("|");
   var data={nom:document.getElementById("edit-nom").value.trim(),prenom:document.getElementById("edit-prenom").value.trim(),operateur:opVal,projet:document.getElementById("edit-projet").value.trim()};
   showToast("💾 Mise à jour…");
@@ -1062,6 +1093,57 @@ function render(){
   var end=new Date(currentMon); end.setDate(end.getDate()+4);
   document.getElementById("weekLabel").textContent=
     currentMon.toLocaleDateString("fr-FR")+" – "+end.toLocaleDateString("fr-FR");
+}
+
+// ─── NOTIFICATIONS WHATSAPP (CallMeBot) ───────────────────────────────────────
+let notifSent = new Set(); // évite les doublons dans la même session
+
+function getSlotStartHour(slot){
+  var m = slot.match(/^(\d+)h/);
+  return m ? parseInt(m[1]) : -1;
+}
+
+async function sendWhatsappNotif(phone, apikey, message){
+  var url = "https://api.callmebot.com/whatsapp.php?phone=" + encodeURIComponent(phone) +
+    "&text=" + encodeURIComponent(message) + "&apikey=" + encodeURIComponent(apikey);
+  try {
+    await fetch(url, {mode:'no-cors'});
+    console.log("[Notif] WhatsApp envoyé à", phone);
+  } catch(e){
+    console.error("[Notif] Erreur envoi WhatsApp:", e);
+  }
+}
+
+function startNotificationChecker(){
+  async function check(){
+    var now = new Date();
+    var todayStr = fmt(now);
+    var nowMin = now.getHours() * 60 + now.getMinutes();
+    var SLOTS = [...SLOT_AM, ...SLOT_PM];
+    for(var slot of SLOTS){
+      var startH = getSlotStartHour(slot);
+      if(startH < 0) continue;
+      var slotMin = startH * 60;
+      var diff = slotMin - nowMin;
+      if(diff < 19 || diff > 21) continue; // fenêtre 19-21 min avant le début
+      for(var machine of machines){
+        var key = machine + "|" + todayStr + "|" + slot;
+        if(notifSent.has(key)) continue;
+        var booking = bookings[key];
+        if(!booking || !booking.operateur) continue;
+        var opInfo = operateursPhone[booking.operateur];
+        if(!opInfo || !opInfo.phone || !opInfo.apikey) continue;
+        notifSent.add(key);
+        var msg = "Rappel : votre créneau " + slot + " sur " + machine +
+          " commence dans 20 min. Réservé par " + booking.nom + " " + booking.prenom +
+          " (" + booking.projet + ").";
+        await sendWhatsappNotif(opInfo.phone, opInfo.apikey, msg);
+        showToast("📱 Notification envoyée à " + booking.operateur);
+      }
+    }
+  }
+  check();
+  setInterval(check, 60000);
 }
 
 // ─── DÉMARRAGE ─────────────────────────────────────────────────────────────────
