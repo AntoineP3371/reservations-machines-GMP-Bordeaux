@@ -272,7 +272,7 @@ async function loadAll(){
   await Promise.all([loadMachines(), loadOperateurs(), loadBookings(), loadDisabled()]);
   render();
   startNotificationChecker();
-  setInterval(async()=>{ await Promise.all([loadBookings(), loadDisabled()]); render(); }, 10000);
+  setInterval(()=>{ location.reload(); }, 10000);
 }
 
 async function loadMachines(){
