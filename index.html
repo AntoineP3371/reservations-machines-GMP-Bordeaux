@@ -354,7 +354,7 @@
   <div>
     <h1>Réservation des machines</h1>
     <p>Planification hebdomadaire des créneaux</p>
-    <p class="app-version">v1.4</p>
+    <p class="app-version">v1.4.1</p>
   </div>
   <div class="header-qr">
     <img id="headerQr" src="" alt="QR Code">
@@ -426,7 +426,7 @@
 
 <!-- ─── ASSISTANT DISPONIBILITÉS ─── -->
 <button id="chatFab" onclick="toggleChat()" title="Assistant disponibilités" aria-label="Assistant disponibilités">💬</button>
-<div class="app-version-mobile">v1.4</div>
+<div class="app-version-mobile">v1.4.1</div>
 <div id="chatPanel" aria-hidden="true">
   <div class="chat-head">
     <span class="chat-title">🤖 Assistant Atelier GMP</span>
@@ -1566,36 +1566,28 @@ function book(machine,date,slot){
 
   var useEtudList=etudiants.length>0;
   var projets=useEtudList?[...new Set(etudiants.map(e=>e.projet))].sort():[];
-  var projetOptsHtml=useEtudList?"<option value=''>— Choisir un projet —</option>"+projets.map(p=>"<option value='"+esc(p)+"'>"+esc(p)+"</option>").join(''):'';
-  var nomPrenomHtml=useEtudList?(
-    "<div class='form-row'>"+
-      "<div class='form-group booking-student-sel'><label>Projet <span class='req'>*</span></label>"+
-        "<select id='fprojet-sel' onchange='onBookingProjetChange(this.value)'><option value=''>— Choisir un projet —</option>"+projets.map(p=>"<option value='"+esc(p)+"'>"+esc(p)+"</option>").join('')+"</select>"+
-        "<input type='hidden' id='fprojet'>"+
-        "<span class='field-err' id='eprojet'>Obligatoire</span></div>"+
-      "<div class='form-group booking-student-sel'><label>Étudiant <span class='req'>*</span></label>"+
-        "<select id='fetudiant-sel' onchange='onBookingEtudiantChange(this.value)' disabled><option value=''>— Choisir d'abord un projet —</option></select>"+
-        "<input type='hidden' id='fnom'>"+
-        "<input type='hidden' id='fprenom'>"+
-        "<span class='field-err' id='enom'>Obligatoire</span></div>"+
-    "</div>"
-  ):(
-    "<div class='form-row'>"+
-      "<div class='form-group'><label>Nom <span class='req'>*</span></label><input type='text' id='fnom' placeholder=\"Nom de l'étudiant\" autocomplete='off'><span class='field-err' id='enom'>Obligatoire</span></div>"+
-      "<div class='form-group'><label>Prénom <span class='req'>*</span></label><input type='text' id='fprenom' placeholder=\"Prénom de l'étudiant\" autocomplete='off'><span class='field-err' id='eprenom'>Obligatoire</span></div>"+
-    "</div>"+
-    "<div class='form-group'><label>Projet <span class='req'>*</span></label><input type='text' id='fprojet' placeholder='Nom du projet' autocomplete='off'><span class='field-err' id='eprojet'>Obligatoire</span></div>"
-  );
+  var dlProjets=useEtudList?"<datalist id='dl-projets'>"+projets.map(p=>"<option value='"+esc(p)+"'>").join('')+"</datalist>":'';
+  var dlNoms="<datalist id='dl-noms'></datalist>";
   openModal(
     "<h2>Nouvelle réservation</h2>"+
     "<div class='meta'>"+esc(machine)+" — "+esc(dayLabel)+" — "+esc(slot)+"</div>"+
-    nomPrenomHtml+
+    dlProjets+dlNoms+
     "<div class='form-row'>"+
+      "<div class='form-group'><label>Projet <span class='req'>*</span></label>"+
+        "<input type='text' id='fprojet' placeholder='Nom du projet' autocomplete='off'"+(useEtudList?" list='dl-projets' oninput='onBookingProjetInput(this.value)'":" autocomplete='off'")+">"+
+        "<span class='field-err' id='eprojet'>Obligatoire</span></div>"+
       "<div class='form-group'><label>Opérateur <span class='req'>*</span></label>"+
         "<div class='operateur-select-wrap'><select id='foperateur' onchange='onOperateurChange(this)'>"+buildOperateurSelect()+"</select></div>"+
         "<input type='text' id='foperateur-custom' placeholder=\"Nom de l'opérateur...\" autocomplete='off'>"+
         "<span class='field-err' id='eoperateur'>Obligatoire</span></div>"+
-      (useEtudList?"":"<div class='form-group'></div>")+
+    "</div>"+
+    "<div class='form-row'>"+
+      "<div class='form-group'><label>Nom <span class='req'>*</span></label>"+
+        "<input type='text' id='fnom' placeholder=\"Nom de l'étudiant\" autocomplete='off'"+(useEtudList?" list='dl-noms' oninput='onBookingNomInput(this.value)'":" autocomplete='off'")+">"+
+        "<span class='field-err' id='enom'>Obligatoire</span></div>"+
+      "<div class='form-group'><label>Prénom <span class='req'>*</span></label>"+
+        "<input type='text' id='fprenom' placeholder=\"Prénom de l'étudiant\" autocomplete='off'>"+
+        "<span class='field-err' id='eprenom'>Obligatoire</span></div>"+
     "</div>"+
     "<div class='form-group'>"+
       "<label>Code PIN d'annulation et de modification <span class='req'>*</span></label>"+
@@ -1609,7 +1601,7 @@ function book(machine,date,slot){
       "<button class='btn btn-ok' onclick='submitBook(\""+jsesc(machine)+"\",\""+date+"\",\""+slot+"\")'>✔ Confirmer</button>"+
     "</div>"
   );
-  if(!useEtudList) prefillLastBooking();
+  prefillLastBooking();
 }
 
 // Mémorisation locale de la dernière saisie (hors code PIN, personnel)
@@ -1629,55 +1621,30 @@ function prefillLastBooking(){
   }
 }
 
-function onBookingProjetChange(projet){
-  var nomIn=document.getElementById('fnom'); if(nomIn) nomIn.value='';
-  var prenomIn=document.getElementById('fprenom'); if(prenomIn) prenomIn.value='';
-  var projIn=document.getElementById('fprojet'); if(projIn) projIn.value=projet;
-  var sel=document.getElementById('fetudiant-sel');
-  if(!sel) return;
-  if(!projet){ sel.innerHTML="<option value=''>— Choisir d'abord un projet —</option>"; sel.disabled=true; return; }
-  var filtered=etudiants.filter(e=>e.projet===projet);
-  sel.innerHTML="<option value=''>— Choisir un étudiant —</option>"+filtered.map(e=>{
-    var key=e.nom+'|'+e.prenom;
-    return "<option value='"+esc(key)+"'>"+esc(e.nom)+" "+esc(e.prenom)+"</option>";
-  }).join('');
-  sel.disabled=false;
-  sel.classList.remove('err');
-  document.getElementById('fprojet-sel').classList.remove('err');
-  document.getElementById('eprojet').classList.remove('show');
-}
-function onBookingEtudiantChange(val){
-  var nomIn=document.getElementById('fnom');
+function onBookingProjetInput(val){
+  var dl=document.getElementById('dl-noms');
+  if(!dl) return;
+  var projet=val.trim();
+  var filtered=projet ? etudiants.filter(e=>e.projet===projet) : etudiants;
+  dl.innerHTML=filtered.map(e=>"<option value='"+esc(e.nom)+"' data-prenom='"+esc(e.prenom)+"'>"+esc(e.nom)+" "+esc(e.prenom)+"</option>").join('');
+  // réinitialise prénom si le projet change
   var prenomIn=document.getElementById('fprenom');
-  if(!val){ if(nomIn) nomIn.value=''; if(prenomIn) prenomIn.value=''; return; }
-  var parts=val.split('|');
-  if(nomIn) nomIn.value=parts[0]||'';
-  if(prenomIn) prenomIn.value=parts[1]||'';
-  document.getElementById('fetudiant-sel').classList.remove('err');
-  document.getElementById('enom').classList.remove('show');
+  if(prenomIn) prenomIn.value='';
 }
-function vfEtudiantSel(){
-  if(!document.getElementById('fetudiant-sel')) return true;
-  var nom=document.getElementById('fnom').value.trim();
-  var ok=!!nom;
-  document.getElementById('fetudiant-sel').classList.toggle('err',!ok);
-  document.getElementById('enom').classList.toggle('show',!ok);
-  var proj=document.getElementById('fprojet').value.trim();
-  var okP=!!proj;
-  document.getElementById('fprojet-sel').classList.toggle('err',!okP);
-  document.getElementById('eprojet').classList.toggle('show',!okP);
-  return ok&&okP;
+function onBookingNomInput(val){
+  var projet=(document.getElementById('fprojet')||{}).value||'';
+  var nom=val.trim();
+  var match=etudiants.find(e=>e.nom===nom && (!projet||e.projet===projet));
+  if(!match && projet==='') match=etudiants.find(e=>e.nom===nom);
+  var prenomIn=document.getElementById('fprenom');
+  if(prenomIn && match) prenomIn.value=match.prenom;
 }
 function vf(id,eid){ var el=document.getElementById(id); if(!el) return true; var v=el.value.trim(); var ok=!!v; if(el.type!=='hidden') el.classList.toggle("err",!ok); document.getElementById(eid).classList.toggle("show",!ok); return ok; }
 function getOperateurValue(){ var sel=document.getElementById("foperateur"); if(!sel) return ""; if(sel.value==="__new__"){ var c=document.getElementById("foperateur-custom"); return c?c.value.trim():""; } return sel.value.trim(); }
 function vfOperateur(){ var v=getOperateurValue(); var ok=!!v; document.getElementById("foperateur").classList.toggle("err",!ok); document.getElementById("eoperateur").classList.toggle("show",!ok); return ok; }
 
 async function submitBook(machine,date,slot){
-  var useEtud=!!document.getElementById('fetudiant-sel');
-  var v1,v2,v4;
-  if(useEtud){ var vEtud=vfEtudiantSel(); v1=vEtud; v2=vEtud; v4=vEtud; }
-  else { v1=vf("fnom","enom"); v2=vf("fprenom","eprenom"); v4=vf("fprojet","eprojet"); }
-  var v3=vfOperateur(), v5=vf("fpin","epin");
+  var v1=vf("fnom","enom"),v2=vf("fprenom","eprenom"),v3=vfOperateur(),v4=vf("fprojet","eprojet"),v5=vf("fpin","epin");
   if(!v1||!v2||!v3||!v4||!v5) return;
   var opVal=getOperateurValue();
   var payload={
