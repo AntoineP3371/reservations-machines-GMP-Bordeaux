@@ -323,6 +323,14 @@
   .stats-bar{flex:1;height:13px;background:var(--primary-light);border-radius:4px;overflow:hidden}
   .stats-bar-fill{height:100%;background:var(--primary);border-radius:4px}
   .stats-bar-count{width:24px;text-align:right;color:var(--muted);font-size:.72rem;flex-shrink:0}
+  .stats-period-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .stats-period-btn{background:var(--primary-light);color:var(--primary-dark);border:1.5px solid var(--border);border-radius:7px;padding:5px 12px;font-size:.78rem;cursor:pointer;transition:background .15s}
+  .stats-period-btn:hover{background:#cde9f6}
+  .stats-period-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .stats-custom-range{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:.8rem}
+  .stats-custom-range input[type=date]{border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:.8rem}
+  .stats-period-label{font-size:.75rem;color:var(--muted);margin-bottom:8px;font-style:italic}
+  .stats-loading{text-align:center;padding:24px;color:var(--muted);font-size:.85rem}
   .etud-import-area{border:2px dashed var(--border);border-radius:10px;padding:18px;text-align:center;cursor:pointer;color:var(--muted);font-size:.85rem;transition:border-color .2s;margin:12px 0}
   .etud-import-area:hover,.etud-import-area.drag-over{border-color:var(--primary);color:var(--primary)}
   .etud-preview-table{width:100%;border-collapse:collapse;font-size:.78rem;margin-top:10px;max-height:220px;display:block;overflow-y:auto}
@@ -354,7 +362,7 @@
   <div>
     <h1>Réservation des machines</h1>
     <p>Planification hebdomadaire des créneaux</p>
-    <p class="app-version">v1.4.1</p>
+    <p class="app-version">v1.4.2</p>
   </div>
   <div class="header-qr">
     <img id="headerQr" src="" alt="QR Code">
@@ -426,7 +434,7 @@
 
 <!-- ─── ASSISTANT DISPONIBILITÉS ─── -->
 <button id="chatFab" onclick="toggleChat()" title="Assistant disponibilités" aria-label="Assistant disponibilités">💬</button>
-<div class="app-version-mobile">v1.4.1</div>
+<div class="app-version-mobile">v1.4.2</div>
 <div id="chatPanel" aria-hidden="true">
   <div class="chat-head">
     <span class="chat-title">🤖 Assistant Atelier GMP</span>
@@ -712,60 +720,115 @@ function printPlanning(){
 }
 
 // ─── STATISTIQUES ──────────────────────────────────────────────────────────────
-function showStats(){
-  var total=Object.keys(bookings).length;
-  var byMachine={};
-  machines.forEach(m=>byMachine[m]=0);
-  Object.keys(bookings).forEach(k=>{ var m=k.split('|')[0]; if(byMachine[m]!==undefined) byMachine[m]++; });
-  var bySlot={};
-  SLOTS.forEach(s=>bySlot[s]=0);
-  Object.keys(bookings).forEach(k=>{ var s=k.split('|')[2]; if(bySlot[s]!==undefined) bySlot[s]++; });
-  var byStudent={};
-  Object.values(bookings).forEach(b=>{ var n=(b.nom||'')+' '+(b.prenom||''); n=n.trim(); if(n) byStudent[n]=(byStudent[n]||0)+1; });
-  var topStudents=Object.entries(byStudent).sort((a,b)=>b[1]-a[1]);
-  var byProjet={};
-  Object.values(bookings).forEach(b=>{ if(b.projet){ byProjet[b.projet]=(byProjet[b.projet]||0)+1; } });
-  var topProjet=Object.entries(byProjet).sort((a,b)=>b[1]-a[1]);
-  var byOp={};
-  Object.values(bookings).forEach(b=>{ if(b.operateur){ byOp[b.operateur]=(byOp[b.operateur]||0)+1; } });
-  var topOp=Object.entries(byOp).sort((a,b)=>b[1]-a[1]);
-  var week=getTwoWeekDays();
-  var totalSlots=machines.length*week.length*SLOTS.length;
+// ─── STATISTIQUES ──────────────────────────────────────────────────────────────
+var _statsPeriod='2weeks';
+var _statsCustomStart='';
+var _statsCustomEnd='';
+
+function getStatsDates(period){
+  var now=new Date();
+  var thisMon=getMonday(now);
+  if(period==='this-week'){
+    var fri=new Date(thisMon); fri.setDate(thisMon.getDate()+4);
+    return {start:fmt(thisMon),end:fmt(fri),label:'Cette semaine'};
+  }
+  if(period==='last-week'){
+    var lMon=new Date(thisMon); lMon.setDate(thisMon.getDate()-7);
+    var lFri=new Date(lMon); lFri.setDate(lMon.getDate()+4);
+    return {start:fmt(lMon),end:fmt(lFri),label:'Semaine passée'};
+  }
+  if(period==='custom'){
+    return {start:_statsCustomStart,end:_statsCustomEnd,label:_statsCustomStart+' → '+_statsCustomEnd};
+  }
+  // 2weeks par défaut
+  var end2=new Date(currentMon); end2.setDate(currentMon.getDate()+13);
+  return {start:fmt(currentMon),end:fmt(end2),label:'2 semaines (vue actuelle)'};
+}
+
+async function showStats(period){
+  _statsPeriod=period||_statsPeriod||'2weeks';
+  var periods=[
+    {id:'this-week',label:'Cette semaine'},
+    {id:'last-week',label:'Semaine passée'},
+    {id:'2weeks',label:'2 semaines'},
+    {id:'custom',label:'Personnalisé'},
+  ];
+  var selHtml=periods.map(p=>"<button class='stats-period-btn"+(p.id===_statsPeriod?' active':'')+"' onclick='showStats(\""+p.id+"\")'>"+p.label+"</button>").join('');
+  var customHtml=_statsPeriod==='custom'?(
+    "<div class='stats-custom-range'>"+
+      "<label>Du <input type='date' id='statsDateFrom' value='"+_statsCustomStart+"' onchange='_statsCustomStart=this.value'></label>"+
+      "<label>Au <input type='date' id='statsDateTo' value='"+_statsCustomEnd+"' onchange='_statsCustomEnd=this.value'></label>"+
+      "<button class='btn' style='padding:4px 10px;font-size:.8rem' onclick='showStats(\"custom\")'>OK</button>"+
+    "</div>"
+  ):'';
+  var html="<div class='modal-title'>📊 Statistiques</div>";
+  html+="<div class='stats-period-bar'>"+selHtml+"</div>";
+  html+=customHtml;
+  html+="<div id='statsContent'><div class='stats-loading'>Chargement…</div></div>";
+  html+="<div class='modal-actions'>";
+  html+="<button class='btn btn-export' id='statsCsvBtn' onclick='exportStatsCsv()'>↓ CSV</button>";
+  html+="<button class='btn btn-close' onclick='closeModal()'>Fermer</button>";
+  html+="</div>";
+  openModal(html);
+  await renderStatsContent();
+}
+
+async function renderStatsContent(){
+  var {start,end,label}=getStatsDates(_statsPeriod);
+  if(_statsPeriod==='custom' && (!start||!end)){ document.getElementById('statsContent').innerHTML="<div class='stats-loading'>Sélectionnez une plage de dates.</div>"; return; }
+  var {data,error}=await sb.from('bookings').select('*').gte('date',start).lte('date',end);
+  if(error){ document.getElementById('statsContent').innerHTML="<div class='stats-loading'>Erreur : "+esc(error.message)+"</div>"; return; }
+  _statsLastData=data||[];
+  var bkList=_statsLastData;
+  var total=bkList.length;
+  // Calcul taux : jours ouvrés dans la période
+  var dStart=new Date(start+'T12:00:00'), dEnd=new Date(end+'T12:00:00');
+  var nbDays=0; for(var d=new Date(dStart);d<=dEnd;d.setDate(d.getDate()+1)){ var dw=d.getDay(); if(dw>=1&&dw<=5) nbDays++; }
+  var totalSlots=machines.length*nbDays*SLOTS.length;
   var pct=totalSlots>0?Math.round(total/totalSlots*100):0;
+  var byMachine={};machines.forEach(m=>byMachine[m]=0);
+  bkList.forEach(b=>{ if(byMachine[b.machine]!==undefined) byMachine[b.machine]++; });
+  var bySlot={};SLOTS.forEach(s=>bySlot[s]=0);
+  bkList.forEach(b=>{ if(bySlot[b.slot]!==undefined) bySlot[b.slot]++; });
+  var byStudent={};
+  bkList.forEach(b=>{ var n=((b.nom||'')+' '+(b.prenom||'')).trim(); if(n) byStudent[n]=(byStudent[n]||0)+1; });
+  var byProjet={};
+  bkList.forEach(b=>{ if(b.projet) byProjet[b.projet]=(byProjet[b.projet]||0)+1; });
+  var byOp={};
+  bkList.forEach(b=>{ if(b.operateur) byOp[b.operateur]=(byOp[b.operateur]||0)+1; });
+  var topStudents=Object.entries(byStudent).sort((a,b)=>b[1]-a[1]);
+  var topProjet=Object.entries(byProjet).sort((a,b)=>b[1]-a[1]);
+  var topOp=Object.entries(byOp).sort((a,b)=>b[1]-a[1]);
   var maxM=Math.max(...Object.values(byMachine),1);
   var maxS=Math.max(...Object.values(bySlot),1);
-  var html="<div class='modal-title'>📊 Statistiques (2 semaines)</div>";
+  var bar=(c,max)=>"<div class='stats-bar'><div class='stats-bar-fill' style='width:"+Math.round(c/max*100)+"%'></div></div>";
+  var row=(lbl,c,max)=>"<div class='stats-bar-row'><span class='stats-bar-label' title='"+esc(lbl)+"'>"+esc(lbl)+"</span>"+bar(c,max)+"<span class='stats-bar-count'>"+c+"</span></div>";
+  var html="<div class='stats-period-label'>"+esc(label)+"</div>";
   html+="<div class='stats-kpis'>";
   html+="<div class='stats-kpi'><div class='stats-kpi-val'>"+total+"</div><div class='stats-kpi-label'>réservations</div></div>";
   html+="<div class='stats-kpi'><div class='stats-kpi-val'>"+pct+"%</div><div class='stats-kpi-label'>taux d'occupation</div></div>";
   html+="<div class='stats-kpi'><div class='stats-kpi-val'>"+machines.length+"</div><div class='stats-kpi-label'>machines</div></div>";
   html+="</div>";
-  if(topProjet.length>0){
-    var maxP=topProjet[0][1];
-    html+="<div class='stats-section'><h4>Par projet</h4>";
-    topProjet.forEach(([n,c])=>{ html+="<div class='stats-bar-row'><span class='stats-bar-label' title='"+esc(n)+"'>"+esc(n)+"</span><div class='stats-bar'><div class='stats-bar-fill' style='width:"+Math.round(c/maxP*100)+"%'></div></div><span class='stats-bar-count'>"+c+"</span></div>"; });
-    html+="</div>";
-  }
-  if(topStudents.length>0){
-    var maxT=topStudents[0][1];
-    html+="<div class='stats-section'><h4>Par étudiant</h4>";
-    topStudents.forEach(([n,c])=>{ html+="<div class='stats-bar-row'><span class='stats-bar-label' title='"+esc(n)+"'>"+esc(n)+"</span><div class='stats-bar'><div class='stats-bar-fill' style='width:"+Math.round(c/maxT*100)+"%'></div></div><span class='stats-bar-count'>"+c+"</span></div>"; });
-    html+="</div>";
-  }
-  html+="<div class='stats-section'><h4>Par machine</h4>";
-  machines.forEach(m=>{ var c=byMachine[m]||0; html+="<div class='stats-bar-row'><span class='stats-bar-label' title='"+esc(m)+"'>"+esc(m)+"</span><div class='stats-bar'><div class='stats-bar-fill' style='width:"+Math.round(c/maxM*100)+"%'></div></div><span class='stats-bar-count'>"+c+"</span></div>"; });
-  html+="</div>";
-  if(topOp.length>0){
-    var maxO=topOp[0][1];
-    html+="<div class='stats-section'><h4>Par opérateur</h4>";
-    topOp.forEach(([n,c])=>{ html+="<div class='stats-bar-row'><span class='stats-bar-label' title='"+esc(n)+"'>"+esc(n)+"</span><div class='stats-bar'><div class='stats-bar-fill' style='width:"+Math.round(c/maxO*100)+"%'></div></div><span class='stats-bar-count'>"+c+"</span></div>"; });
-    html+="</div>";
-  }
-  html+="<div class='stats-section'><h4>Par créneau</h4>";
-  SLOTS.forEach(s=>{ var c=bySlot[s]||0; html+="<div class='stats-bar-row'><span class='stats-bar-label'>"+esc(s)+"</span><div class='stats-bar'><div class='stats-bar-fill' style='width:"+Math.round(c/maxS*100)+"%'></div></div><span class='stats-bar-count'>"+c+"</span></div>"; });
-  html+="</div>";
-  html+="<div class='modal-actions'><button class='btn' onclick='closeModal()'>Fermer</button></div>";
-  openModal(html);
+  if(topProjet.length>0){var mp=topProjet[0][1];html+="<div class='stats-section'><h4>Par projet</h4>"+topProjet.map(([n,c])=>row(n,c,mp)).join('')+"</div>";}
+  if(topStudents.length>0){var mt=topStudents[0][1];html+="<div class='stats-section'><h4>Par étudiant</h4>"+topStudents.map(([n,c])=>row(n,c,mt)).join('')+"</div>";}
+  html+="<div class='stats-section'><h4>Par machine</h4>"+machines.map(m=>row(m,byMachine[m]||0,maxM)).join('')+"</div>";
+  if(topOp.length>0){var mo=topOp[0][1];html+="<div class='stats-section'><h4>Par opérateur</h4>"+topOp.map(([n,c])=>row(n,c,mo)).join('')+"</div>";}
+  html+="<div class='stats-section'><h4>Par créneau</h4>"+SLOTS.map(s=>row(s,bySlot[s]||0,maxS)).join('')+"</div>";
+  document.getElementById('statsContent').innerHTML=html;
+}
+
+var _statsLastData=[];
+
+function exportStatsCsv(){
+  var {start,end}=getStatsDates(_statsPeriod);
+  var rows=[['Machine','Date','Créneau','Nom','Prénom','Projet','Opérateur']];
+  _statsLastData.forEach(b=>rows.push([b.machine||'',b.date||'',b.slot||'',b.nom||'',b.prenom||'',b.projet||'',b.operateur||'']));
+  var csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
+  var blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='stats_reservations_'+start+'_'+end+'.csv';
+  a.click();
 }
 
 async function loadOperateurs(){
