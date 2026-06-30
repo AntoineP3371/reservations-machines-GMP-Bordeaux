@@ -61,7 +61,9 @@
   /* Toolbar */
   .toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:20px;flex-wrap:wrap;background:var(--surface);padding:10px 16px;border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border)}
   .toolbar-nav{display:flex;align-items:center;gap:6px}
-  .toolbar-actions{display:flex;align-items:center;gap:6px}
+  .toolbar-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .toolbar-filters{display:flex;align-items:center;gap:6px;flex:1;min-width:0}
+  .toolbar-btns{display:flex;align-items:center;gap:6px}
   .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:7px;font-size:.875rem;font-weight:600;cursor:pointer;transition:background .15s,transform .1s}
   .btn:active{transform:scale(.97)}
   .btn-nav{background:var(--bg);color:var(--text);border:1px solid var(--border)}
@@ -315,7 +317,14 @@
   .stats-bar{flex:1;height:13px;background:var(--primary-light);border-radius:4px;overflow:hidden}
   .stats-bar-fill{height:100%;background:var(--primary);border-radius:4px}
   .stats-bar-count{width:24px;text-align:right;color:var(--muted);font-size:.72rem;flex-shrink:0}
-  @media(max-width:640px){.search-input{width:100px}.search-input:focus{width:130px}}
+  @media(max-width:640px){
+    .toolbar-actions{flex-direction:column;align-items:stretch}
+    .toolbar-filters{width:100%}
+    .search-wrap{flex:1;min-width:0}
+    .search-input{width:100%!important}
+    .op-filter{flex:1;min-width:0;max-width:none}
+    .toolbar-btns{width:100%;justify-content:center}
+  }
 </style>
 </head>
 <body>
@@ -329,7 +338,7 @@
   <div>
     <h1>Réservation des machines</h1>
     <p>Planification hebdomadaire des créneaux</p>
-    <p class="app-version">v1.2</p>
+    <p class="app-version">v1.2.1</p>
   </div>
   <div class="header-qr">
     <img id="headerQr" src="" alt="QR Code">
@@ -363,17 +372,21 @@
     <button class="btn btn-nav" onclick="changeWeek(7)">▶</button>
   </div>
   <div class="toolbar-actions">
-    <div class="search-wrap">
-      <span class="search-icon">🔍</span>
-      <input class="search-input" id="searchInput" type="text" placeholder="Rechercher…" oninput="onSearchInput(this.value)" autocomplete="off">
+    <div class="toolbar-filters">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" id="searchInput" type="text" placeholder="Rechercher…" oninput="onSearchInput(this.value)" autocomplete="off">
+      </div>
+      <select class="op-filter" id="opFilterSel" onchange="onOpFilterChange(this.value)" title="Filtrer par opérateur">
+        <option value="">Tous les opérateurs</option>
+      </select>
     </div>
-    <select class="op-filter" id="opFilterSel" onchange="onOpFilterChange(this.value)" title="Filtrer par opérateur">
-      <option value="">Tous les opérateurs</option>
-    </select>
-    <button class="btn btn-nav" id="printBtn" onclick="printPlanning()" style="display:none">Imprimer</button>
-    <button class="btn btn-export" id="exportBtn" onclick="exportCSV()" style="display:none">↓ CSV</button>
-    <button class="btn btn-nav" onclick="startMachineCarousel()">👁 Plannings</button>
-    <button class="btn btn-admin" id="adminBtn" onclick="toggleAdmin()">⚙ Admin</button>
+    <div class="toolbar-btns">
+      <button class="btn btn-nav" id="printBtn" onclick="printPlanning()" style="display:none">Imprimer</button>
+      <button class="btn btn-export" id="exportBtn" onclick="exportCSV()" style="display:none">↓ CSV</button>
+      <button class="btn btn-nav" onclick="startMachineCarousel()">👁 Plannings</button>
+      <button class="btn btn-admin" id="adminBtn" onclick="toggleAdmin()">⚙ Admin</button>
+    </div>
   </div>
 </div>
 
