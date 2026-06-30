@@ -338,7 +338,7 @@
   <div>
     <h1>Réservation des machines</h1>
     <p>Planification hebdomadaire des créneaux</p>
-    <p class="app-version">v1.2.2</p>
+    <p class="app-version">v1.3</p>
   </div>
   <div class="header-qr">
     <img id="headerQr" src="" alt="QR Code">
@@ -663,6 +663,15 @@ function showStats(){
     var maxT=top5[0][1];
     html+="<div class='stats-section'><h4>Top étudiants</h4>";
     top5.forEach(([n,c])=>{ html+="<div class='stats-bar-row'><span class='stats-bar-label' title='"+esc(n)+"'>"+esc(n)+"</span><div class='stats-bar'><div class='stats-bar-fill' style='width:"+Math.round(c/maxT*100)+"%'></div></div><span class='stats-bar-count'>"+c+"</span></div>"; });
+    html+="</div>";
+  }
+  var byOp={};
+  Object.values(bookings).forEach(b=>{ if(b.operateur){ byOp[b.operateur]=(byOp[b.operateur]||0)+1; } });
+  var topOp=Object.entries(byOp).sort((a,b)=>b[1]-a[1]);
+  if(topOp.length>0){
+    var maxO=topOp[0][1];
+    html+="<div class='stats-section'><h4>Classement opérateurs</h4>";
+    topOp.forEach(([n,c])=>{ html+="<div class='stats-bar-row'><span class='stats-bar-label' title='"+esc(n)+"'>"+esc(n)+"</span><div class='stats-bar'><div class='stats-bar-fill' style='width:"+Math.round(c/maxO*100)+"%'></div></div><span class='stats-bar-count'>"+c+"</span></div>"; });
     html+="</div>";
   }
   html+="<div class='modal-actions'><button class='btn' onclick='closeModal()'>Fermer</button></div>";
