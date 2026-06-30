@@ -47,6 +47,8 @@
   header h1{font-size:1.5rem;font-weight:700;color:var(--text);line-height:1.2}
   header p{font-size:.85rem;color:var(--muted);margin-top:2px}
   .app-version{font-size:.7rem;color:var(--muted);opacity:.6;margin-top:4px}
+  .app-version-mobile{display:none;position:fixed;bottom:8px;left:8px;font-size:.65rem;color:var(--muted);opacity:.5;z-index:10;pointer-events:none}
+  @media(max-width:640px){.app-version{display:none}.app-version-mobile{display:block}}
   /* Admin banner */
   .admin-banner{display:none;flex-direction:column;gap:8px;background:var(--admin-light);border:1.5px solid var(--admin);border-radius:var(--radius);padding:10px 16px;margin-bottom:14px;color:var(--admin-dark)}
   .admin-banner.visible{display:flex}
@@ -341,7 +343,7 @@
   <div>
     <h1>Réservation des machines</h1>
     <p>Planification hebdomadaire des créneaux</p>
-    <p class="app-version">v1.3.2</p>
+    <p class="app-version">v1.3.3</p>
   </div>
   <div class="header-qr">
     <img id="headerQr" src="" alt="QR Code">
@@ -412,6 +414,7 @@
 
 <!-- ─── ASSISTANT DISPONIBILITÉS ─── -->
 <button id="chatFab" onclick="toggleChat()" title="Assistant disponibilités" aria-label="Assistant disponibilités">💬</button>
+<div class="app-version-mobile">v1.3.3</div>
 <div id="chatPanel" aria-hidden="true">
   <div class="chat-head">
     <span class="chat-title">🤖 Assistant Atelier GMP</span>
