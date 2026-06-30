@@ -544,18 +544,27 @@ function populateOpFilter(){
 // ─── ÉTAT MACHINES ─────────────────────────────────────────────────────────────
 function openMachineStatusManager(){
   var html="<div class='modal-title' style='margin-bottom:8px'>🔧 État des machines</div>";
-  html+="<table style='width:100%;border-collapse:collapse;font-size:.8rem'><tbody>";
+  html+="<div style='display:flex;flex-direction:column;gap:4px'>";
   machines.forEach(m=>{
     var st=machineStatus[m]||'ok';
-    var since=machineStatusDate[m]?' <em style="font-size:.68rem;color:var(--muted)">depuis '+machineStatusDate[m]+'</em>':'';
-    var reason=machineStatusReason[m]?' <em style="font-size:.7rem;color:var(--muted)">('+esc(machineStatusReason[m])+')</em>':'';
-    var badge=st==='ok'?'<span style="color:var(--free-text);font-weight:600">✔ En service</span>':'<span class="badge-'+st+'">'+st.toUpperCase()+'</span>'+reason+since;
+    var info='';
+    if(st!=='ok'){
+      if(machineStatusReason[m]) info+=' <em style="font-size:.7rem;color:var(--muted)">('+esc(machineStatusReason[m])+')</em>';
+      if(machineStatusDate[m]) info+=' <em style="font-size:.68rem;color:var(--muted)">depuis '+machineStatusDate[m]+'</em>';
+    }
+    var badge=st==='ok'
+      ?'<span style="color:var(--free-text);font-weight:600;font-size:.78rem">✔ En service</span>'
+      :'<span class="badge-'+st+'" style="font-size:.72rem">'+st.toUpperCase()+'</span>'+info;
     var btn=st==='ok'
-      ?'<button class="btn" style="font-size:.72rem;padding:2px 8px;background:#fee2e2;color:#b91c1c;border-color:#fca5a5" onclick="declarePanne(\''+jsesc(m)+'\')">🔧 Panne</button>'
-      :'<button class="btn" style="font-size:.72rem;padding:2px 8px;background:#f0fdf4;color:#15803d;border-color:#86efac" onclick="remettreEnService(\''+jsesc(m)+'\')">✔ En service</button>';
-    html+="<tr style='border-bottom:1px solid var(--border)'><td style='padding:4px 6px;font-weight:600;white-space:nowrap'>"+esc(m)+"</td><td style='padding:4px 6px'>"+badge+"</td><td style='padding:4px 6px;text-align:right;white-space:nowrap'>"+btn+"</td></tr>";
+      ?'<button class="btn" style="font-size:.7rem;padding:2px 10px;background:#fee2e2;color:#b91c1c;border-color:#fca5a5;white-space:nowrap;flex-shrink:0" onclick="declarePanne(\''+jsesc(m)+'\')">🔧 Panne</button>'
+      :'<button class="btn" style="font-size:.7rem;padding:2px 10px;background:#f0fdf4;color:#15803d;border-color:#86efac;white-space:nowrap;flex-shrink:0" onclick="remettreEnService(\''+jsesc(m)+'\')">✔ En service</button>';
+    html+="<div style='display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid var(--border);font-size:.8rem'>"
+      +"<span style='font-weight:600;min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='"+esc(m)+"'>"+esc(m)+"</span>"
+      +"<span style='flex-shrink:0'>"+badge+"</span>"
+      +btn
+      +"</div>";
   });
-  html+="</tbody></table>";
+  html+="</div>";
   html+="<div class='modal-actions'><button class='btn' onclick='closeModal()'>Fermer</button></div>";
   openModal(html);
 }
