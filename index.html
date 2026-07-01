@@ -362,7 +362,7 @@
   <div>
     <h1>Réservation des machines</h1>
     <p>Planification hebdomadaire des créneaux</p>
-    <p class="app-version">v1.6.0</p>
+    <p class="app-version">v1.6.1</p>
   </div>
   <div class="header-qr">
     <img id="headerQr" src="" alt="QR Code">
@@ -434,7 +434,7 @@
 
 <!-- ─── ASSISTANT DISPONIBILITÉS ─── -->
 <button id="chatFab" onclick="toggleChat()" title="Assistant disponibilités" aria-label="Assistant disponibilités">💬</button>
-<div class="app-version-mobile">v1.6.0</div>
+<div class="app-version-mobile">v1.6.1</div>
 <div id="chatPanel" aria-hidden="true">
   <div class="chat-head">
     <span class="chat-title">🤖 Assistant Atelier GMP</span>
@@ -1821,6 +1821,14 @@ function openEditBookingModal(key){
         "<span class='field-err' id='edit-operateur-err'>Obligatoire</span></div>"+
       "<div class='form-group'><label>Projet <span class='req'>*</span></label><input type='text' id='edit-projet' value='"+esc(r.projet)+"' autocomplete='off'><span class='field-err' id='edit-projet-err'>Obligatoire</span></div>"+
     "</div>"+
+    "<div style='margin:14px 0 6px;border-top:2px dashed var(--border);padding-top:14px'>"+
+      "<div style='font-size:.82rem;color:var(--muted);text-align:center;margin-bottom:8px'>Montrez l'écran à l'opérateur — il saisit son code pour valider</div>"+
+      "<div class='form-group'>"+
+        "<label>Code de validation opérateur <span class='req'>*</span></label>"+
+        "<input type='password' id='edit-opcode' placeholder='Code à 4 chiffres' maxlength='4' pattern='[0-9]{4}' autocomplete='off' style='letter-spacing:4px;font-size:1.1rem;text-align:center'>"+
+        "<span class='field-err' id='edit-opcode-err'>Code opérateur incorrect.</span>"+
+      "</div>"+
+    "</div>"+
     "<div class='modal-actions'>"+
       "<button class='btn btn-close' onclick='closeModal()'>Annuler</button>"+
       "<button class='btn btn-ok' onclick='submitEditBooking(\""+jsesc(key)+"\")'>Enregistrer</button>"+
@@ -1839,6 +1847,19 @@ async function submitEditBooking(key){
   var v1=vfEdit("edit-nom","edit-nom-err"),v2=vfEdit("edit-prenom","edit-prenom-err"),v3=vfEditOp(),v4=vfEdit("edit-projet","edit-projet-err");
   if(!v1||!v2||!v3||!v4) return;
   var opVal=getEditOpValue();
+  // Validation du code opérateur
+  var opcodeEl=document.getElementById("edit-opcode");
+  var opcodeErrEl=document.getElementById("edit-opcode-err");
+  var enteredCode=opcodeEl?opcodeEl.value.trim():'';
+  var storedCode=(operateursPhone[opVal]||{}).code||'';
+  if(storedCode && enteredCode!==storedCode){
+    if(opcodeEl) opcodeEl.classList.add("err");
+    if(opcodeErrEl) opcodeErrEl.classList.add("show");
+    opcodeEl.focus();
+    return;
+  }
+  if(opcodeEl) opcodeEl.classList.remove("err");
+  if(opcodeErrEl) opcodeErrEl.classList.remove("show");
   if(document.getElementById("edit-operateur").value==="__new__" && opVal && !operateurs.includes(opVal)){ operateurs.push(opVal); operateursPhone[opVal]={phone:'',apikey:''}; await sb.from('operateurs').insert({name:opVal, phone:'', apikey:''}); }
   var parts=key.split("|");
   var data={nom:document.getElementById("edit-nom").value.trim(),prenom:document.getElementById("edit-prenom").value.trim(),operateur:opVal,projet:document.getElementById("edit-projet").value.trim()};
