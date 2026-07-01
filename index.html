@@ -362,7 +362,7 @@
   <div>
     <h1>Réservation des machines</h1>
     <p>Planification hebdomadaire des créneaux</p>
-    <p class="app-version">v1.6.1</p>
+    <p class="app-version">v1.6.2</p>
   </div>
   <div class="header-qr">
     <img id="headerQr" src="" alt="QR Code">
@@ -434,7 +434,7 @@
 
 <!-- ─── ASSISTANT DISPONIBILITÉS ─── -->
 <button id="chatFab" onclick="toggleChat()" title="Assistant disponibilités" aria-label="Assistant disponibilités">💬</button>
-<div class="app-version-mobile">v1.6.1</div>
+<div class="app-version-mobile">v1.6.2</div>
 <div id="chatPanel" aria-hidden="true">
   <div class="chat-head">
     <span class="chat-title">🤖 Assistant Atelier GMP</span>
@@ -1928,16 +1928,34 @@ function promptPinMove(srcKey,destKey){
       "<input type='password' id='movePin' placeholder='Code PIN' maxlength='8' autocomplete='off'>"+
       "<span class='pin-error' id='movePinErr'>Code incorrect.</span>"+
     "</div>"+
+    "<div style='margin:14px 0 6px;border-top:2px dashed var(--border);padding-top:14px'>"+
+      "<div style='font-size:.82rem;color:var(--muted);text-align:center;margin-bottom:8px'>Montrez l'écran à l'opérateur — il saisit son code pour valider</div>"+
+      "<div class='form-group'>"+
+        "<label>Code de validation opérateur <span class='req'>*</span></label>"+
+        "<input type='password' id='moveOpcode' placeholder='Code à 4 chiffres' maxlength='4' pattern='[0-9]{4}' autocomplete='off' style='letter-spacing:4px;font-size:1.1rem;text-align:center'>"+
+        "<span class='field-err' id='moveOpcodeErr'>Code opérateur incorrect.</span>"+
+      "</div>"+
+    "</div>"+
     "<div class='modal-actions'>"+
       "<button class='btn btn-close' onclick='closeModal()'>Annuler</button>"+
-      "<button class='btn btn-ok' onclick='confirmPinMove(\""+jsesc(srcKey)+"\",\""+jsesc(destKey)+"\",\""+jsesc(r.pin)+"\")'>Déplacer</button>"+
+      "<button class='btn btn-ok' onclick='confirmPinMove(\""+jsesc(srcKey)+"\",\""+jsesc(destKey)+"\",\""+jsesc(r.pin)+"\",\""+jsesc(r.operateur||'')+"\")'>Déplacer</button>"+
     "</div>"
   );
   setTimeout(function(){ var el=document.getElementById('movePin'); if(el) el.focus(); },50);
 }
-function confirmPinMove(srcKey,destKey,storedPin){
+function confirmPinMove(srcKey,destKey,storedPin,opName){
   var entered=document.getElementById('movePin').value.trim();
   if(entered!==storedPin){ document.getElementById('movePinErr').style.display='block'; document.getElementById('movePin').classList.add('err'); return; }
+  var opcodeEl=document.getElementById('moveOpcode');
+  var opcodeErrEl=document.getElementById('moveOpcodeErr');
+  var enteredCode=opcodeEl?opcodeEl.value.trim():'';
+  var storedCode=(operateursPhone[opName]||{}).code||'';
+  if(storedCode && enteredCode!==storedCode){
+    if(opcodeEl) opcodeEl.classList.add('err');
+    if(opcodeErrEl) opcodeErrEl.classList.add('show');
+    opcodeEl.focus();
+    return;
+  }
   moveBooking(srcKey,destKey);
 }
 async function moveBooking(srcKey,destKey){
