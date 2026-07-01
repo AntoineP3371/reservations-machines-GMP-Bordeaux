@@ -86,7 +86,7 @@
   td{border:1px solid var(--border);padding:0;vertical-align:top}
   td.machine-label{padding:8px 10px;font-weight:700;font-size:.88rem;border-right:2px solid var(--border);white-space:nowrap;vertical-align:middle;text-align:left;min-width:100px}
   .machine-color-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;border:1px solid rgba(0,0,0,.15);vertical-align:middle}
-  .slot-cell{min-width:130px;height:auto;min-height:80px;padding:6px 8px;position:relative;transition:background .15s}
+  .slot-cell{min-width:130px;height:auto;min-height:100px;padding:6px 8px;position:relative;transition:background .15s}
   .slot-cell.free{background:#fff;cursor:pointer}
   .slot-cell.free:hover{background:#e8f6fc}
   .slot-cell.booked{cursor:grab}
@@ -362,7 +362,7 @@
   <div>
     <h1>Réservation des machines</h1>
     <p>Planification hebdomadaire des créneaux</p>
-    <p class="app-version">v1.6.2</p>
+    <p class="app-version">v1.7</p>
   </div>
   <div class="header-qr">
     <img id="headerQr" src="" alt="QR Code">
@@ -434,7 +434,7 @@
 
 <!-- ─── ASSISTANT DISPONIBILITÉS ─── -->
 <button id="chatFab" onclick="toggleChat()" title="Assistant disponibilités" aria-label="Assistant disponibilités">💬</button>
-<div class="app-version-mobile">v1.6.2</div>
+<div class="app-version-mobile">v1.7</div>
 <div id="chatPanel" aria-hidden="true">
   <div class="chat-head">
     <span class="chat-title">🤖 Assistant Atelier GMP</span>
@@ -682,7 +682,7 @@ function buildPrintTable(pageMachines, week){
           td+='background:'+colorLight+';border-left:2px solid '+color+';';
           inner+='<strong>'+esc(r.nom)+' '+esc(r.prenom)+'</strong>'
             +(r.operateur?'<br><span style="color:#0083ba">'+esc(r.operateur)+'</span>':'')
-            +(r.projet?'<br><em style="color:#5b7686">'+esc(r.projet)+'</em>':'');
+            +(r.projet?'<br><em style="color:#5b7686">'+esc(r.projet)+([r.encadrant1,r.encadrant2].filter(Boolean).length?' ('+esc([r.encadrant1,r.encadrant2].filter(Boolean).join(', '))+')':'')+'</em>':'');
         } else if(isPanne){
           td+='background:#fef2f2;color:#b91c1c;';
           inner+='🔧 '+mSt;
@@ -869,7 +869,7 @@ async function loadDisabled(){
 async function loadEtudiants(){
   const {data,error} = await sb.from('etudiants').select('*').order('projet').order('nom');
   if(error){ console.error('etudiants:', error); return; }
-  etudiants = data ? data.map(r=>({nom:r.nom||'',prenom:r.prenom||'',projet:r.projet||''})) : [];
+  etudiants = data ? data.map(r=>({nom:r.nom||'',prenom:r.prenom||'',projet:r.projet||'',enc1:r.encadrant1||'',enc2:r.encadrant2||''})) : [];
 }
 
 // ─── GESTION ÉTUDIANTS ──────────────────────────────────────────────────────
@@ -900,13 +900,13 @@ function showEtudiantsManager(){
 function generateEtudiantsXlsx(){
   var wb=XLSX.utils.book_new();
   var sampleData=[
-    ["Nom","Prenom","Projet"],
-    ["MARTIN","Alice","Projet A"],
-    ["DUPONT","Bob","Projet A"],
-    ["BERNARD","Clara","Projet B"],
+    ["Nom","Prenom","Projet","Encadrant1","Encadrant2"],
+    ["MARTIN","Alice","Projet A","Dubois Jean","Leroi Marie"],
+    ["DUPONT","Bob","Projet A","Dubois Jean","Leroi Marie"],
+    ["BERNARD","Clara","Projet B","Moreau Paul",""],
   ];
   var ws=XLSX.utils.aoa_to_sheet(sampleData);
-  ws['!cols']=[{wch:18},{wch:18},{wch:25}];
+  ws['!cols']=[{wch:18},{wch:18},{wch:25},{wch:20},{wch:20}];
   XLSX.utils.book_append_sheet(wb,ws,"Etudiants");
   XLSX.writeFile(wb,"modele_etudiants.xlsx");
 }
@@ -926,12 +926,14 @@ function parseEtudiantsFile(file){
     if(rows.length<2){ showToast('❌ Fichier vide ou invalide'); return; }
     var header=rows[0].map(h=>(h+'').trim().toLowerCase());
     var iNom=header.indexOf('nom'), iPrenom=header.indexOf('prenom'), iProjet=header.indexOf('projet');
+    var iEnc1=header.indexOf('encadrant1'), iEnc2=header.indexOf('encadrant2');
     if(iNom<0||iPrenom<0||iProjet<0){ showToast('❌ Colonnes manquantes : Nom, Prenom, Projet requises'); return; }
     var parsed=[];
     for(var i=1;i<rows.length;i++){
       var r=rows[i];
       var nom=(r[iNom]+'').trim(), prenom=(r[iPrenom]+'').trim(), projet=(r[iProjet]+'').trim();
-      if(nom&&prenom&&projet) parsed.push({nom,prenom,projet});
+      var enc1=iEnc1>=0?(r[iEnc1]+'').trim():'', enc2=iEnc2>=0?(r[iEnc2]+'').trim():'';
+      if(nom&&prenom&&projet) parsed.push({nom,prenom,projet,enc1,enc2});
     }
     if(parsed.length===0){ showToast('❌ Aucune ligne valide trouvée'); return; }
     previewEtudiantsImport(parsed);
@@ -943,8 +945,8 @@ function previewEtudiantsImport(data){
   _etudPending=data;
   var html="<div class='modal-title'>👨‍🎓 Aperçu de l'import</div>";
   html+="<div class='etud-list-count'>"+data.length+" étudiant(s) détecté(s)</div>";
-  html+="<table class='etud-preview-table'><thead><tr><th>Nom</th><th>Prénom</th><th>Projet</th></tr></thead><tbody>";
-  data.slice(0,50).forEach(e=>{ html+="<tr><td>"+esc(e.nom)+"</td><td>"+esc(e.prenom)+"</td><td>"+esc(e.projet)+"</td></tr>"; });
+  html+="<table class='etud-preview-table'><thead><tr><th>Nom</th><th>Prénom</th><th>Projet</th><th>Encadrant 1</th><th>Encadrant 2</th></tr></thead><tbody>";
+  data.slice(0,50).forEach(e=>{ html+="<tr><td>"+esc(e.nom)+"</td><td>"+esc(e.prenom)+"</td><td>"+esc(e.projet)+"</td><td>"+esc(e.enc1||'')+"</td><td>"+esc(e.enc2||'')+"</td></tr>"; });
   if(data.length>50) html+="<tr><td colspan='3' style='color:var(--muted);text-align:center'>...et "+(data.length-50)+" autres</td></tr>";
   html+="</tbody></table>";
   html+="<div class='disclaimer-note' style='margin-top:10px'>⚠️ L'import remplacera la liste existante.</div>";
@@ -960,7 +962,7 @@ async function confirmEtudiantsImport(){
   showToast('💾 Import en cours…');
   var {error:delErr}=await sb.from('etudiants').delete().neq('id',0);
   if(delErr){ showToast('❌ Erreur suppression : '+(delErr.message||'')); return; }
-  var rows=data.map(e=>({nom:e.nom,prenom:e.prenom,projet:e.projet}));
+  var rows=data.map(e=>({nom:e.nom,prenom:e.prenom,projet:e.projet,encadrant1:e.enc1||'',encadrant2:e.enc2||''}));
   var {error:insErr}=await sb.from('etudiants').insert(rows);
   if(insErr){ showToast('❌ Erreur import : '+(insErr.message||'')); return; }
   await loadEtudiants();
@@ -1084,7 +1086,7 @@ function buildMultiMachineAgendaTable(machineList,days){
           content="<div class='slot-time'>"+slot+"</div>"+
             "<div class='slot-name'>"+esc(r.nom)+" "+esc(r.prenom)+"</div>"+
             (r.operateur?"<div class='slot-operateur'>"+esc(r.operateur)+"</div>":"")+
-            (r.projet?"<div class='slot-projet'>"+esc(r.projet)+"</div>":""); }
+            (r.projet?"<div class='slot-projet'>"+esc(r.projet)+([r.encadrant1,r.encadrant2].filter(Boolean).length?' ('+esc([r.encadrant1,r.encadrant2].filter(Boolean).join(', '))+')':"")+"</div>":""); }
         else { cls="free"+tc; content="<div class='slot-time'>"+slot+"</div><div class='slot-free-label'>Libre</div>"; }
         html+="<td><div class='slot-cell "+cls+"'"+inlineStyle+">"+content+"</div></td>";
       });
@@ -1665,10 +1667,11 @@ function book(machine,date,slot){
   var projets=useEtudList?[...new Set(etudiants.map(e=>e.projet))].sort():[];
   var dlProjets=useEtudList?"<datalist id='dl-projets'>"+projets.map(p=>"<option value='"+esc(p)+"'>").join('')+"</datalist>":'';
   var dlNoms="<datalist id='dl-noms'></datalist>";
+  var hiddenEncs="<input type='hidden' id='fenc1'><input type='hidden' id='fenc2'>";
   openModal(
     "<h2>Nouvelle réservation</h2>"+
     "<div class='meta'>"+esc(machine)+" — "+esc(dayLabel)+" — "+esc(slot)+"</div>"+
-    dlProjets+dlNoms+
+    dlProjets+dlNoms+hiddenEncs+
     "<div class='form-row'>"+
       "<div class='form-group'><label>Projet <span class='req'>*</span></label>"+
         "<input type='text' id='fprojet' placeholder='Nom du projet' autocomplete='off'"+(useEtudList?" list='dl-projets' oninput='onBookingProjetInput(this.value)'":" autocomplete='off'")+">"+
@@ -1732,9 +1735,13 @@ function onBookingProjetInput(val){
   var projet=val.trim();
   var filtered=projet ? etudiants.filter(e=>e.projet===projet) : etudiants;
   dl.innerHTML=filtered.map(e=>"<option value='"+esc(e.nom)+"' data-prenom='"+esc(e.prenom)+"'>"+esc(e.nom)+" "+esc(e.prenom)+"</option>").join('');
-  // réinitialise prénom si le projet change
   var prenomIn=document.getElementById('fprenom');
   if(prenomIn) prenomIn.value='';
+  // auto-remplissage des encadrants selon le projet
+  var match=etudiants.find(e=>e.projet===projet);
+  var e1=document.getElementById('fenc1'), e2=document.getElementById('fenc2');
+  if(e1) e1.value=match?match.enc1||'':'';
+  if(e2) e2.value=match?match.enc2||'':'';
 }
 function onBookingNomInput(val){
   var projet=(document.getElementById('fprojet')||{}).value||'';
@@ -1770,7 +1777,9 @@ async function submitBook(machine,date,slot){
     prenom:document.getElementById("fprenom").value.trim(),
     operateur:opVal,
     projet:document.getElementById("fprojet").value.trim(),
-    pin:document.getElementById("fpin").value.trim()
+    pin:document.getElementById("fpin").value.trim(),
+    encadrant1:(document.getElementById("fenc1")||{}).value||'',
+    encadrant2:(document.getElementById("fenc2")||{}).value||''
   };
   // Ajouter nouvel opérateur si besoin
   if(document.getElementById("foperateur").value==="__new__" && opVal && !operateurs.includes(opVal)){
@@ -1862,7 +1871,7 @@ async function submitEditBooking(key){
   if(opcodeErrEl) opcodeErrEl.classList.remove("show");
   if(document.getElementById("edit-operateur").value==="__new__" && opVal && !operateurs.includes(opVal)){ operateurs.push(opVal); operateursPhone[opVal]={phone:'',apikey:''}; await sb.from('operateurs').insert({name:opVal, phone:'', apikey:''}); }
   var parts=key.split("|");
-  var data={nom:document.getElementById("edit-nom").value.trim(),prenom:document.getElementById("edit-prenom").value.trim(),operateur:opVal,projet:document.getElementById("edit-projet").value.trim()};
+  var data={nom:document.getElementById("edit-nom").value.trim(),prenom:document.getElementById("edit-prenom").value.trim(),operateur:opVal,projet:document.getElementById("edit-projet").value.trim(),encadrant1:bookings[key].encadrant1||'',encadrant2:bookings[key].encadrant2||''};
   // Nouvelle place choisie (machine / date / créneau)
   var nm=document.getElementById("edit-machine").value;
   var nd=document.getElementById("edit-date").value;
@@ -1962,7 +1971,7 @@ async function moveBooking(srcKey,destKey){
   var r=bookings[srcKey]; if(!r) return;
   if(bookings[destKey]||disabled[destKey]){ showToast("❌ Case déjà occupée"); render(); return; }
   var sp=srcKey.split('|'), dp=destKey.split('|');
-  var payload={nom:r.nom,prenom:r.prenom,operateur:r.operateur,projet:r.projet,pin:r.pin};
+  var payload={nom:r.nom,prenom:r.prenom,operateur:r.operateur,projet:r.projet,pin:r.pin,encadrant1:r.encadrant1||'',encadrant2:r.encadrant2||''};
   var _before=snapState();
   showToast("💾 Déplacement…");
   var ok=await dbAddBooking(dp[0],dp[1],dp[2],payload);
@@ -2073,7 +2082,7 @@ function render(){
           content="<div class='slot-time'>"+slot+"</div>"+
             "<div class='slot-name'>"+esc(r.nom)+" "+esc(r.prenom)+"</div>"+
             (r.operateur?"<div class='slot-operateur'>"+esc(r.operateur)+"</div>":"")+
-            (r.projet?"<div class='slot-projet'>"+esc(r.projet)+"</div>":"");
+            (r.projet?"<div class='slot-projet'>"+esc(r.projet)+([r.encadrant1,r.encadrant2].filter(Boolean).length?' ('+esc([r.encadrant1,r.encadrant2].filter(Boolean).join(', '))+')':"")+"</div>":"");
           if(isAdmin) adm="<div class='slot-admin-actions'><button class='admin-slot-btn del' title='Supprimer' onclick='event.stopPropagation();adminDel(\""+jsesc(key)+"\")'>✕</button><button class='admin-slot-btn edit' title='Modifier' onclick='event.stopPropagation();openEditBookingModal(\""+jsesc(key)+"\")'>✏️</button></div>";
           if(isFilterActive){
             var st=searchTerm;
