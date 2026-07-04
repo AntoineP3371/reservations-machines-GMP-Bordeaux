@@ -115,7 +115,7 @@
   .pbar-label .over-txt{color:var(--danger);font-weight:700}
   .pbar{height:10px;background:#e6eef3;border-radius:20px;overflow:hidden}
   .pbar-fill{height:100%;border-radius:20px;transition:width .3s,background-size .3s;background-image:linear-gradient(90deg,#0083ba,#22c55e,#f59e0b,#ef4444);background-repeat:no-repeat;background-position:left center}
-  .op-duree{width:64px;padding:5px 7px;border:1.5px solid var(--border);border-radius:6px;font-family:inherit;font-size:.82rem;background:#fff}
+  .op-duree{width:48px;padding:5px 6px;border:1.5px solid var(--border);border-radius:6px;font-family:inherit;font-size:.82rem;background:#fff}
   .duree-wrap{display:inline-flex;align-items:center;gap:3px;font-size:.72rem;color:var(--muted);white-space:nowrap}
   .countdown{font-size:.78rem;font-weight:700;color:#4338ca;margin-top:3px;white-space:nowrap}
   .countdown.done{color:var(--green)}
@@ -461,7 +461,7 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 // ⚠️ Collez ici l'URL /exec de votre déploiement Google Apps Script :
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw9ksxZ4TpFQUaZhXbS2lXSyrPgRzDTaUtyINhLWIMw5dGAFY1X0Dc3aAm9OBjZlv_2sA/exec';
 
-const APP_VERSION = 'v1.3.0';
+const APP_VERSION = 'v1.3.1';
 const MAX_FILE_MB = 50;
 const ADMIN_CODE  = 'admin1234';   // mot de passe admin fixe (non modifiable)
 
@@ -933,10 +933,11 @@ async function loadOperateur(){
     const statutCell=badge(d.statut)+(end?"<div class='countdown' data-end='"+end+"'></div>":"");
     // Durée réelle éditable + Lancer (démarre le minuteur) ; états modifiables à tout moment
     const dureeVal=d.duree_reelle_min||d.temps_estime_min||0;
+    const dh=Math.floor(dureeVal/60), dm=dureeVal%60;
     let act="<div class='cell-actions'>"+
       "<button class='btn btn-ghost' onclick='voir3D("+d.id+")'>👁️ 3D</button>"+
       "<button class='btn btn-ghost' onclick='telechargerStep("+d.id+")'>⬇ STEP</button>"+
-      "<span class='duree-wrap'><input type='number' class='op-duree' id='duree-"+d.id+"' value='"+dureeVal+"' min='1' title='Durée réelle (min)'> min</span>"+
+      "<span class='duree-wrap' title='Durée réelle d\\'impression'><input type='number' class='op-duree' id='dureeh-"+d.id+"' value='"+dh+"' min='0'> h <input type='number' class='op-duree' id='dureem-"+d.id+"' value='"+dm+"' min='0' max='59'> min</span>"+
       "<button class='btn btn-amber' onclick='lancerImpression("+d.id+")'>▶️ Lancer</button>"+
       "<button class='btn btn-green' onclick='majStatut("+d.id+",\"imprimee\")'>✅ Terminée</button>"+
       "<button class='btn btn-nav' onclick='majStatut("+d.id+",\"validee\")' title='Remettre en attente'>↩︎</button>"+
@@ -968,9 +969,10 @@ async function majStatut(id, statut){
   loadOperateur();
 }
 async function lancerImpression(id){
-  const inp=document.getElementById('duree-'+id);
-  const duree=Math.max(1, Math.round(num(inp?inp.value:0, 0)));
-  if(!duree){ showToast('⚠️ Indiquez la durée réelle (min) avant de lancer'); return; }
+  const hh=Math.max(0, Math.round(num((document.getElementById('dureeh-'+id)||{}).value, 0)));
+  const mm=Math.max(0, Math.round(num((document.getElementById('dureem-'+id)||{}).value, 0)));
+  const duree=hh*60+mm;
+  if(!duree){ showToast('⚠️ Indiquez la durée réelle (heures / minutes) avant de lancer'); return; }
   busy(true,'Démarrage…');
   const {error}=await sb.from('demandes').update({statut:'en_cours', duree_reelle_min:duree, en_cours_at:new Date().toISOString(), imprime_at:null}).eq('id',id);
   busy(false);
@@ -1066,7 +1068,8 @@ async function rechercherSuivi(){
     "<div><div class='dc-title'>📄 "+esc(d.fichier_nom)+"</div>"+
     "<div class='dc-meta'>👤 "+esc(d.etudiant_prenom+' '+d.etudiant_nom)+" · n°"+(d.numero||'?')+" · "+machineLabel(d.machine)+" · ⏱️ "+esc(tempsLabel(d))+
     (d.encadrant_nom?"<br>✔️ Validé par "+esc(d.encadrant_nom):"")+
-    (d.encadrant_commentaire?"<br>💬 "+esc(d.encadrant_commentaire):"")+"</div></div>"+
+    (d.notes?"<br>📝 Commentaire étudiant : "+esc(d.notes):"")+
+    (d.encadrant_commentaire?"<br>💬 Commentaire encadrant : "+esc(d.encadrant_commentaire):"")+"</div></div>"+
     "<div style='text-align:right'>"+badge(d.statut)+(end?"<div class='countdown' data-end='"+end+"'></div>":"")+"</div>"+
     "</div></div>";
   }).join('');
