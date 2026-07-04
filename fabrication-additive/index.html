@@ -32,9 +32,6 @@
   header h1{font-size:1.4rem;font-weight:800;color:var(--text);line-height:1.2}
   header p{font-size:.85rem;color:var(--muted);margin-top:2px}
   .nav{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
-  .app-version{font-size:.7rem;color:var(--muted);opacity:.6;margin-top:4px}
-  .app-version-mobile{display:none;position:fixed;bottom:8px;left:50%;transform:translateX(-50%);font-size:.65rem;color:var(--muted);opacity:.5;z-index:10;pointer-events:none;white-space:nowrap}
-  @media(max-width:640px){.app-version{display:none}.app-version-mobile{display:block}}
 
   /* Boutons */
   .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 15px;border:none;border-radius:7px;font-size:.875rem;font-weight:600;cursor:pointer;transition:background .15s,transform .1s;font-family:inherit}
@@ -262,7 +259,6 @@
     <div>
       <h1>Demandes d'impression 3D</h1>
       <p>Atelier GMP — IUT de Bordeaux</p>
-      <p class="app-version" id="appVersion"></p>
     </div>
     <nav class="nav">
       <button class="btn btn-nav active" data-view="nouvelle" onclick="showView('nouvelle')">➕ Nouvelle demande</button>
@@ -389,7 +385,6 @@
   </section>
 
 </div>
-<div class="app-version-mobile" id="appVersionMobile"></div>
 
 <!-- ============ MODALE : saisie de code ============ -->
 <div class="overlay" id="ovCode">
@@ -539,7 +534,6 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 // ⚠️ Collez ici l'URL /exec de votre déploiement Google Apps Script :
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw9ksxZ4TpFQUaZhXbS2lXSyrPgRzDTaUtyINhLWIMw5dGAFY1X0Dc3aAm9OBjZlv_2sA/exec';
 
-const APP_VERSION = 'v1.6.0';
 const MAX_FILE_MB = 50;
 const ADMIN_CODE  = 'admin1234';   // mot de passe admin fixe (non modifiable)
 
@@ -1437,8 +1431,6 @@ window.addEventListener('pageshow', function(e){
 //  INITIALISATION
 // ─────────────────────────────────────────────────────────────────────────
 (async function init(){
-  document.getElementById('appVersion').textContent=APP_VERSION;
-  document.getElementById('appVersionMobile').textContent=APP_VERSION;
   await Promise.all([loadParams(), loadEtudiants(), loadOperateurs()]);
   buildMachines();
   buildSuiviLists();
