@@ -23,6 +23,10 @@ Deno.serve(async (req) => {
       const { data } = await sb.from('operateurs').select('code').eq('name', name).maybeSingle()
       const stored = (data?.code ?? '').toString().trim()
       ok = stored.length > 0 && stored === (code ?? '').toString().trim()
+    } else if (kind === 'encadrant') {
+      const { data } = await sb.from('parametres').select('valeur').eq('cle', 'code_encadrant').maybeSingle()
+      const stored = ((data?.valeur) || '0000').toString().trim()
+      ok = stored === (code ?? '').toString().trim()
     }
     return new Response(JSON.stringify({ ok }), {
       headers: { ...cors, 'Content-Type': 'application/json' },

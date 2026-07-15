@@ -29,13 +29,28 @@ Deno.serve(async (req) => {
     const body = await req.json()
     const { action, adminCode } = body
 
-    // Authentification admin
+    const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+
+    // Admin (empreinte du mot de passe) — requis pour la plupart des actions.
     const expected = (Deno.env.get('ADMIN_PW_HASH') || '').trim()
-    if (!expected || (await sha256hex((adminCode ?? '').toString())) !== expected) {
-      return json({ ok: false, error: 'unauthorized' }, 401)
+    const isAdmin = !!expected && (await sha256hex((adminCode ?? '').toString())) === expected
+
+    // Limites par projet : modifiable par un OPÉRATEUR (code valide) ou l'admin. N'écrit QUE limites_projets.
+    if (action === 'limits-save') {
+      let ok = isAdmin
+      if (!ok && body.operateur && body.opCode) {
+        const { data } = await sb.from('operateurs').select('code').eq('name', body.operateur).maybeSingle()
+        const s = (data?.code ?? '').toString().trim()
+        ok = s.length > 0 && s === (body.opCode ?? '').toString().trim()
+      }
+      if (!ok) return json({ ok: false, error: 'unauthorized' }, 401)
+      const { error } = await sb.from('parametres').upsert([{ cle: 'limites_projets', valeur: (body.valeur ?? '').toString() }])
+      if (error) throw error
+      return json({ ok: true })
     }
 
-    const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    // Toutes les autres actions exigent l'admin.
+    if (!isAdmin) return json({ ok: false, error: 'unauthorized' }, 401)
 
     if (action === 'saveMachines') {
       const machines = (body.machines || []) as any[]
@@ -105,6 +120,26 @@ Deno.serve(async (req) => {
         if (!error || error.code === '23505') count++
       }
       return json({ ok: true, count })
+    }
+
+    // ── Paramètres (Impression 3D) ──
+    if (action === 'params-list') {
+      const { data, error } = await sb.from('parametres').select('cle, valeur')
+      if (error) throw error
+      const map: Record<string, string> = {}
+      for (const p of (data || []) as any[]) map[p.cle] = p.valeur
+      return json({ ok: true, params: map })
+    }
+
+    if (action === 'params-save') {
+      const rows = ((body.params || []) as any[])
+        .filter((r) => r && (r.cle ?? '').toString())
+        .map((r) => ({ cle: r.cle.toString(), valeur: (r.valeur ?? '').toString() }))
+      if (rows.length) {
+        const { error } = await sb.from('parametres').upsert(rows)
+        if (error) throw error
+      }
+      return json({ ok: true })
     }
 
     return json({ ok: false, error: 'bad action' }, 400)

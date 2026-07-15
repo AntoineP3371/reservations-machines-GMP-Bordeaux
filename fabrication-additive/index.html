@@ -611,6 +611,8 @@ let currentEncadrantNom = '';
 let currentOperateurNom = '';
 let currentRole = null;      // 'encadrant' | 'admin'
 let _encadrantCode = '';     // code encadrant saisi (mémorisé pour les appels aux fonctions)
+let _fabAdminCode  = '';     // mot de passe admin saisi (mémorisé pour les appels aux fonctions)
+let _operateurCode = '';     // code opérateur saisi (mémorisé pour les appels aux fonctions)
 
 // ─────────────────────────────────────────────────────────────────────────
 //  UTILITAIRES
@@ -653,7 +655,8 @@ function showView(name){
 //  CHARGEMENT DES DONNÉES
 // ─────────────────────────────────────────────────────────────────────────
 async function loadParams(){
-  const {data,error} = await sb.from('parametres').select('*');
+  // Lecture publique : le code encadrant n'est PAS exposé (vérifié côté serveur).
+  const {data,error} = await sb.from('parametres_public').select('cle, valeur');
   PARAMS = {};
   if(!error && data) data.forEach(r=>PARAMS[r.cle]=r.valeur);
   MACHINES = parseMachines();
@@ -961,7 +964,7 @@ async function confirmOperateur(){
   if(nom && code){
     try{ const {data,error}=await sb.functions.invoke('verify-code',{ body:{ kind:'operateur', name:nom, code:code } }); ok=!error && !!(data && data.ok); }catch(e){ ok=false; }
   }
-  if(ok){ currentOperateurNom=nom; closeOverlay('ovOperateur'); openOperateur(); }
+  if(ok){ currentOperateurNom=nom; _operateurCode=code; closeOverlay('ovOperateur'); openOperateur(); }
   else { document.getElementById('opErr').classList.add('show'); document.getElementById('opCodeInput').classList.add('err'); }
 }
 function openCodeModal(role,title,meta){
@@ -978,10 +981,12 @@ function openCodeModal(role,title,meta){
 async function confirmCode(){
   const code=document.getElementById('codeInput').value.trim();
   if(currentRole==='admin'){
-    if(await sha256hex(code)===ADMIN_PW_HASH){ closeOverlay('ovCode'); openAdmin(); }
+    if(await sha256hex(code)===ADMIN_PW_HASH){ _fabAdminCode=code; closeOverlay('ovCode'); openAdmin(); }
     else codeError();
   } else if(currentRole==='encadrant'){
-    if(code===(PARAMS.code_encadrant||'0000')){ _encadrantCode=code; closeOverlay('ovCode'); chooseEncadrantNom(); }
+    let ok=false;
+    try{ const {data,error}=await sb.functions.invoke('verify-code',{ body:{ kind:'encadrant', code:code } }); ok=!error && !!(data&&data.ok); }catch(e){ ok=false; }
+    if(ok){ _encadrantCode=code; closeOverlay('ovCode'); chooseEncadrantNom(); }
     else codeError();
   }
 }
@@ -1319,9 +1324,9 @@ async function saveLimites(){
   const map={...LIMITES_PROJETS};
   document.querySelectorAll('#limitesList .lim-input').forEach(inp=>{ map[inp.dataset.projet]=Math.max(1,Math.round(num(inp.value,limiteDefaut()))); });
   busy(true,'Enregistrement…');
-  const {error}=await sb.from('parametres').upsert([{cle:'limites_projets', valeur:JSON.stringify(map)}]);
+  const res=await sb.functions.invoke('admin-op',{ body:{ action:'limits-save', operateur:currentOperateurNom, opCode:_operateurCode, adminCode:_fabAdminCode, valeur:JSON.stringify(map) } });
   busy(false);
-  if(error){ showToast('❌ '+error.message); return; }
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ '+((res.data&&res.data.error)||'Échec')); return; }
   await loadParams(); updateProjetProgress();
   closeOverlay('ovLimites'); showToast('✅ Limites enregistrées');
 }
@@ -1501,8 +1506,10 @@ async function rechercherSuivi(silent){
 // ─────────────────────────────────────────────────────────────────────────
 //  ADMIN
 // ─────────────────────────────────────────────────────────────────────────
-function openAdmin(){
-  document.getElementById('pCodeEnc').value=PARAMS.code_encadrant||'0000';
+async function openAdmin(){
+  let codeEnc='0000';
+  try{ const {data}=await sb.functions.invoke('admin-op',{ body:{ action:'params-list', adminCode:_fabAdminCode } }); if(data&&data.ok&&data.params) codeEnc=data.params.code_encadrant||'0000'; }catch(e){}
+  document.getElementById('pCodeEnc').value=codeEnc;
   document.getElementById('pLimite').value=limiteDefaut();
   renderNotifOperateurs();
   document.getElementById('machinesEditor').innerHTML='';
@@ -1552,9 +1559,9 @@ async function saveAdmin(){
     {cle:'operateurs_impression', valeur:JSON.stringify(notifNoms)}
   ];
   busy(true,'Enregistrement…');
-  const {error}=await sb.from('parametres').upsert(rows);
+  const res=await sb.functions.invoke('admin-op',{ body:{ action:'params-save', adminCode:_fabAdminCode, params:rows } });
   busy(false);
-  if(error){ showToast('❌ '+error.message); return; }
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ '+((res.data&&res.data.error)||'Échec')); return; }
   await loadParams(); buildMachines(); onMachineChange(); updateProjetProgress();
   closeOverlay('ovAdmin'); showToast('💾 Paramètres enregistrés');
 }
