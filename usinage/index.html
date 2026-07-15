@@ -869,34 +869,18 @@ async function loadEtudiants(){
 // La gestion des étudiants (import, aperçu, liste) se fait désormais depuis le portail
 // d'accueil, sur la base partagée — voir reservation-machines/index.html.
 
-// ─── SUPABASE : ÉCRITURE ───────────────────────────────────────────────────────
-async function dbAddBooking(machine,date,slot,data){
-  const {error} = await sb.from('bookings').insert({machine,date,slot,...data});
-  if(error){ showToast('❌ Erreur réservation : '+(error.message||JSON.stringify(error))); return false; }
-  return true;
-}
-
-async function dbDeleteBooking(machine,date,slot){
-  const {error} = await sb.from('bookings').delete().match({machine,date,slot});
-  if(error){ showToast('❌ Erreur suppression : '+(error.message||JSON.stringify(error))); return false; }
-  return true;
-}
-
-async function dbUpdateBooking(machine,date,slot,data){
-  const {error} = await sb.from('bookings').update(data).match({machine,date,slot});
-  if(error){ showToast('❌ Erreur mise à jour : '+(error.message||JSON.stringify(error))); return false; }
-  return true;
-}
-
+// ─── SUPABASE : ÉCRITURE (via Edge Functions) ──────────────────────────────────
+// Les écritures de réservations passent par la fonction booking-op (voir submitBook, tryDel, etc.).
+// Les blocages de créneaux passent par admin-op (block / unblock).
 async function dbAddDisabled(machine,date,slot,reason=''){
-  const {error} = await sb.from('disabled_slots').insert({machine,date,slot,reason});
-  if(error && error.code!=='23505'){ showToast('❌ Erreur blocage : '+(error.message||JSON.stringify(error))); return false; }
+  const res=await sb.functions.invoke('admin-op',{ body:{ action:'block', adminCode:getAdminPw(), machine, date, slot, reason } });
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ Erreur blocage'+((res.data&&res.data.error)?' : '+res.data.error:'')); return false; }
   return true;
 }
 
 async function dbDeleteDisabled(machine,date,slot){
-  const {error} = await sb.from('disabled_slots').delete().match({machine,date,slot});
-  if(error){ showToast('❌ Erreur déblocage : '+(error.message||JSON.stringify(error))); return false; }
+  const res=await sb.functions.invoke('admin-op',{ body:{ action:'unblock', adminCode:getAdminPw(), machine, date, slot } });
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ Erreur déblocage'); return false; }
   return true;
 }
 
@@ -1215,11 +1199,8 @@ function snapState(){ return { b: JSON.parse(JSON.stringify(bookings)), d: JSON.
 async function applyState(snapB, snapD){
   snapB=snapB||{}; snapD=snapD||{};
   var dates = getTwoWeekDays().map(function(d){ return fmt(d); });
-  for(var k in bookings){ var p=k.split("|"); if(dates.indexOf(p[1])>=0){ await sb.from('bookings').delete().match({machine:p[0],date:p[1],slot:p[2]}); } }
-  for(var k2 in disabled){ var p2=k2.split("|"); if(dates.indexOf(p2[1])>=0){ await sb.from('disabled_slots').delete().match({machine:p2[0],date:p2[1],slot:p2[2]}); } }
-  for(var k3 in snapB){ var p3=k3.split("|"); if(dates.indexOf(p3[1])<0) continue; var r=snapB[k3];
-    await sb.from('bookings').insert({machine:p3[0],date:p3[1],slot:p3[2],nom:r.nom||'',prenom:r.prenom||'',operateur:r.operateur||'',projet:r.projet||'',pin:r.pin||'',encadrant1:r.encadrant1||'',encadrant2:r.encadrant2||'',encadrant3:r.encadrant3||''}); }
-  for(var k4 in snapD){ var p4=k4.split("|"); if(dates.indexOf(p4[1])>=0){ await sb.from('disabled_slots').insert({machine:p4[0],date:p4[1],slot:p4[2],reason:(snapD[k4]&&snapD[k4].reason)||''}); } }
+  var res=await sb.functions.invoke('booking-op',{ body:{ action:'restoreState', adminCode:getAdminPw(), dates:dates, bookings:snapB, disabled:snapD } });
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ Échec de l\'opération'+((res.data&&res.data.error)?' : '+res.data.error:'')); }
   await loadBookings(); await loadDisabled(); render();
 }
 
@@ -1457,10 +1438,9 @@ function adminLockHalfDay(machine,date,period){
 }
 async function confirmAdminLockHalfDay(machine,date,period,reason){
   var slots=period==="am"?SLOT_AM:SLOT_PM;
-  for(const slot of slots){
-    var key=machine+"|"+date+"|"+slot;
-    if(!bookings[key]){ await dbAddDisabled(machine,date,slot,reason); disabled[key]={reason}; }
-  }
+  var res=await sb.functions.invoke('admin-op',{ body:{ action:'blockHalfDay', adminCode:getAdminPw(), machine, date, slots, reason } });
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ Erreur blocage'); return; }
+  slots.forEach(function(slot){ var key=machine+"|"+date+"|"+slot; if(!bookings[key]) disabled[key]={reason:reason}; });
   closeModal(); render(); showToast("🔒 Demi-journée bloquée");
 }
 
@@ -1469,9 +1449,10 @@ async function adminDel(key){
   var parts=key.split("|");
   var r=bookings[key];
   var detail = r ? (r.nom+' '+r.prenom+(r.projet?' — '+r.projet:'')) : key;
+  var res=await sb.functions.invoke('booking-op',{ body:{ action:'cancel', adminCode:getAdminPw(), machine:parts[0], date:parts[1], slot:parts[2] } });
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ '+((res.data&&res.data.error)||'Erreur suppression')); return; }
   addHistoryEntry("Suppression réservation", parts[0]+' | '+parts[1]+' | '+parts[2]+' — '+detail, bookings, disabled);
   closeModal();
-  await dbDeleteBooking(parts[0],parts[1],parts[2]);
   delete bookings[key];
   render(); showToast("🗑 Réservation supprimée");
 }
@@ -1551,8 +1532,8 @@ function book(machine,date,slot){
           "<span class='pin-error' id='pinErr'>Code incorrect.</span>"+
         "</div>"+
         "<div class='modal-actions'>"+
-          "<button class='btn btn-ok' onclick='tryEdit(\""+jsesc(key)+"\",\""+jsesc(r.pin)+"\")'>✏️ Modifier</button>"+
-          "<button class='btn btn-del' onclick='tryDel(\""+jsesc(key)+"\",\""+jsesc(r.pin)+"\")'>🗑 Annuler la réservation</button>"+
+          "<button class='btn btn-ok' onclick='tryEdit(\""+jsesc(key)+"\")'>✏️ Modifier</button>"+
+          "<button class='btn btn-del' onclick='tryDel(\""+jsesc(key)+"\")'>🗑 Annuler la réservation</button>"+
           "<button class='btn btn-close' onclick='closeModal()'>Fermer</button>"+
         "</div>"
       );
@@ -1661,44 +1642,52 @@ async function submitBook(machine,date,slot){
   var opcodeEl=document.getElementById("fopcode");
   var opcodeErrEl=document.getElementById("eopcode");
   var enteredCode=opcodeEl?opcodeEl.value.trim():'';
-  // Vérification du code opérateur CÔTÉ SERVEUR (le code n'est plus dans le navigateur).
-  var okCode=await verifyOperateurCode(opVal, enteredCode);
-  if(!okCode){
-    if(opcodeErrEl){ opcodeErrEl.textContent="Code opérateur incorrect."; opcodeErrEl.classList.add("show"); }
-    if(opcodeEl){ opcodeEl.classList.add("err"); opcodeEl.focus(); }
-    return;
-  }
-  if(opcodeEl) opcodeEl.classList.remove("err");
-  if(opcodeErrEl) opcodeErrEl.classList.remove("show");
   var projetVal=document.getElementById("fprojet").value.trim();
-  // Encadrants : on prend les champs pré-remplis, avec repli sur les encadrants du projet
-  // (évite d'enregistrer des encadrants vides si l'auto-remplissage n'a pas été déclenché).
+  // Encadrants : champs pré-remplis, repli sur les encadrants du projet.
   var encMatch=etudiants.find(function(e){return e.projet===projetVal;})||{};
   var payload={
     nom:document.getElementById("fnom").value.trim(),
     prenom:document.getElementById("fprenom").value.trim(),
     operateur:opVal,
     projet:projetVal,
-    pin:document.getElementById("fpin").value.trim(),
     encadrant1:((document.getElementById("fenc1")||{}).value||'').trim()||encMatch.enc1||'',
     encadrant2:((document.getElementById("fenc2")||{}).value||'').trim()||encMatch.enc2||'',
     encadrant3:((document.getElementById("fenc3")||{}).value||'').trim()||encMatch.enc3||''
   };
+  var pinVal=document.getElementById("fpin").value.trim();
   showToast("💾 Enregistrement…");
   var key=machine+"|"+date+"|"+slot;
   var _before=snapState();
-  var ok=await dbAddBooking(machine,date,slot,payload);
-  if(ok){ bookings[key]=payload; saveLastBooking(payload); addHistoryEntry("Nouvelle réservation", machine+' | '+date+' | '+slot+' — '+payload.nom+' '+payload.prenom+(payload.projet?' ('+payload.projet+')':''), _before.b, _before.d); closeModal(); render(); showToast("✅ Réservation confirmée"); }
+  // Création CÔTÉ SERVEUR : vérifie le code opérateur + la disponibilité du créneau.
+  var res=await sb.functions.invoke('booking-op',{ body:Object.assign({ action:'create', machine:machine, date:date, slot:slot, opName:opVal, opCode:enteredCode, pin:pinVal }, payload) });
+  if(res.error || !res.data || !res.data.ok){
+    var err=res.data&&res.data.error;
+    if(err==='badcode'){ if(opcodeErrEl){ opcodeErrEl.textContent="Code opérateur incorrect."; opcodeErrEl.classList.add("show"); } if(opcodeEl){ opcodeEl.classList.add("err"); opcodeEl.focus(); } }
+    else if(err==='occupied'){ showToast("❌ Ce créneau vient d'être pris."); }
+    else { showToast("❌ Erreur : "+(err||'réservation')); }
+    return;
+  }
+  bookings[key]=Object.assign({machine:machine,date:date,slot:slot}, payload); saveLastBooking(payload);
+  addHistoryEntry("Nouvelle réservation", machine+' | '+date+' | '+slot+' — '+payload.nom+' '+payload.prenom+(payload.projet?' ('+payload.projet+')':''), _before.b, _before.d);
+  closeModal(); render(); showToast("✅ Réservation confirmée");
 }
 
-function tryDel(key,storedPin){
+var _currentEditPin='';   // pin vérifié à l'ouverture de la modif (utilisateur), réutilisé à l'enregistrement
+async function tryDel(key){
   var entered=document.getElementById("pinIn").value.trim();
-  if(entered!==storedPin){ document.getElementById("pinErr").style.display="block"; document.getElementById("pinIn").classList.add("err"); return; }
-  adminDel(key);
+  var parts=key.split("|");
+  var res=await sb.functions.invoke('booking-op',{ body:{ action:'cancel', machine:parts[0], date:parts[1], slot:parts[2], pin:entered } });
+  if(res.error || !res.data || !res.data.ok){ document.getElementById("pinErr").style.display="block"; document.getElementById("pinIn").classList.add("err"); return; }
+  var r=bookings[key]; var detail = r ? (r.nom+' '+r.prenom+(r.projet?' — '+r.projet:'')) : key;
+  addHistoryEntry("Suppression réservation", parts.join(' | ')+' — '+detail, bookings, disabled);
+  closeModal(); delete bookings[key]; render(); showToast("🗑 Réservation annulée");
 }
-function tryEdit(key,storedPin){
+async function tryEdit(key){
   var entered=document.getElementById("pinIn").value.trim();
-  if(entered!==storedPin){ document.getElementById("pinErr").style.display="block"; document.getElementById("pinIn").classList.add("err"); return; }
+  var parts=key.split("|");
+  var res=await sb.functions.invoke('booking-op',{ body:{ action:'verifyPin', machine:parts[0], date:parts[1], slot:parts[2], pin:entered } });
+  if(res.error || !res.data || !res.data.ok){ document.getElementById("pinErr").style.display="block"; document.getElementById("pinIn").classList.add("err"); return; }
+  _currentEditPin=entered;
   openEditBookingModal(key);
 }
 
@@ -1753,43 +1742,38 @@ async function submitEditBooking(key){
   var v1=vfEdit("edit-nom","edit-nom-err"),v2=vfEdit("edit-prenom","edit-prenom-err"),v3=vfEditOp(),v4=vfEdit("edit-projet","edit-projet-err");
   if(!v1||!v2||!v3||!v4) return;
   var opVal=getEditOpValue();
-  // Validation du code opérateur
   var opcodeEl=document.getElementById("edit-opcode");
   var opcodeErrEl=document.getElementById("edit-opcode-err");
   var enteredCode=opcodeEl?opcodeEl.value.trim():'';
-  // Vérification du code opérateur CÔTÉ SERVEUR (le code n'est plus dans le navigateur).
-  var okCode=await verifyOperateurCode(opVal, enteredCode);
-  if(!okCode){
-    if(opcodeErrEl){ opcodeErrEl.textContent="Code opérateur incorrect."; opcodeErrEl.classList.add("show"); }
-    if(opcodeEl){ opcodeEl.classList.add("err"); opcodeEl.focus(); }
-    return;
-  }
-  if(opcodeEl) opcodeEl.classList.remove("err");
-  if(opcodeErrEl) opcodeErrEl.classList.remove("show");
   var parts=key.split("|");
   var data={nom:document.getElementById("edit-nom").value.trim(),prenom:document.getElementById("edit-prenom").value.trim(),operateur:opVal,projet:document.getElementById("edit-projet").value.trim(),encadrant1:bookings[key].encadrant1||'',encadrant2:bookings[key].encadrant2||'',encadrant3:bookings[key].encadrant3||''};
-  // Nouvelle place choisie (machine / date / créneau)
-  var nm=document.getElementById("edit-machine").value;
-  var nd=document.getElementById("edit-date").value;
-  var ns=document.getElementById("edit-slot").value;
+  var nm=document.getElementById("edit-machine").value, nd=document.getElementById("edit-date").value, ns=document.getElementById("edit-slot").value;
   var newKey=nm+"|"+nd+"|"+ns;
+  // Auth : admin (mot de passe) ou utilisateur (pin vérifié à l'ouverture + code opérateur)
+  var auth={ opName:opVal, opCode:enteredCode };
+  if(isAdmin) auth.adminCode=getAdminPw(); else auth.pin=_currentEditPin;
+  function _editErr(res){
+    var err=res&&res.data&&res.data.error;
+    if(err==='badcode'){ if(opcodeErrEl){ opcodeErrEl.textContent="Code opérateur incorrect."; opcodeErrEl.classList.add("show"); } if(opcodeEl){ opcodeEl.classList.add("err"); opcodeEl.focus(); } }
+    else if(err==='occupied'){ showToast("❌ La case cible est déjà occupée"); }
+    else if(err==='auth'){ showToast("❌ Code d'annulation incorrect"); }
+    else showToast("❌ Erreur : "+(err||''));
+  }
   if(newKey===key){
-    // Place inchangée → simple mise à jour des champs
     showToast("💾 Mise à jour…");
-    var ok=await dbUpdateBooking(parts[0],parts[1],parts[2],data);
-    if(ok){ addHistoryEntry("Modification réservation", parts[0]+' | '+parts[1]+' | '+parts[2]+' — '+data.nom+' '+data.prenom); Object.assign(bookings[key],data); closeModal(); render(); showToast("✅ Réservation modifiée"); }
+    var res=await sb.functions.invoke('booking-op',{ body:Object.assign({ action:'update', machine:parts[0], date:parts[1], slot:parts[2] }, data, auth) });
+    if(res.error || !res.data || !res.data.ok){ _editErr(res); return; }
+    addHistoryEntry("Modification réservation", parts[0]+' | '+parts[1]+' | '+parts[2]+' — '+data.nom+' '+data.prenom, bookings, disabled);
+    Object.assign(bookings[key],data); closeModal(); render(); showToast("✅ Réservation modifiée");
     return;
   }
-  // Déplacement : la case cible doit être libre
   if(bookings[newKey]||disabled[newKey]){ showToast("❌ La case cible est déjà occupée"); return; }
-  var payload=Object.assign({pin:bookings[key].pin}, data);
   var _before=snapState();
   showToast("💾 Déplacement…");
-  var okAdd=await dbAddBooking(nm,nd,ns,payload);
-  if(!okAdd) return;
-  await dbDeleteBooking(parts[0],parts[1],parts[2]);
-  bookings[newKey]=payload; delete bookings[key];
-  addHistoryEntry("Déplacement réservation", parts.join(' | ')+' → '+nm+' | '+nd+' | '+ns+' — '+payload.nom+' '+payload.prenom, _before.b, _before.d);
+  var res2=await sb.functions.invoke('booking-op',{ body:Object.assign({ action:'move', from:{machine:parts[0],date:parts[1],slot:parts[2]}, to:{machine:nm,date:nd,slot:ns} }, data, auth) });
+  if(res2.error || !res2.data || !res2.data.ok){ _editErr(res2); return; }
+  bookings[newKey]=Object.assign({machine:nm,date:nd,slot:ns}, data); delete bookings[key];
+  addHistoryEntry("Déplacement réservation", parts.join(' | ')+' → '+nm+' | '+nd+' | '+ns+' — '+data.nom+' '+data.prenom, _before.b, _before.d);
   closeModal(); render(); showToast("✅ Réservation déplacée");
 }
 
@@ -1843,36 +1827,41 @@ function promptPinMove(srcKey,destKey){
     "</div>"+
     "<div class='modal-actions'>"+
       "<button class='btn btn-close' onclick='closeModal()'>Annuler</button>"+
-      "<button class='btn btn-ok' onclick='confirmPinMove(\""+jsesc(srcKey)+"\",\""+jsesc(destKey)+"\",\""+jsesc(r.pin)+"\",\""+jsesc(r.operateur||'')+"\")'>Déplacer</button>"+
+      "<button class='btn btn-ok' onclick='confirmPinMove(\""+jsesc(srcKey)+"\",\""+jsesc(destKey)+"\",\""+jsesc(r.operateur||'')+"\")'>Déplacer</button>"+
     "</div>"
   );
   setTimeout(function(){ var el=document.getElementById('movePin'); if(el) el.focus(); },50);
 }
-async function confirmPinMove(srcKey,destKey,storedPin,opName){
+async function confirmPinMove(srcKey,destKey,opName){
   var entered=document.getElementById('movePin').value.trim();
-  if(entered!==storedPin){ document.getElementById('movePinErr').style.display='block'; document.getElementById('movePin').classList.add('err'); return; }
   var opcodeEl=document.getElementById('moveOpcode');
   var opcodeErrEl=document.getElementById('moveOpcodeErr');
   var enteredCode=opcodeEl?opcodeEl.value.trim():'';
-  var okCode=await verifyOperateurCode(opName, enteredCode);
-  if(!okCode){
-    if(opcodeErrEl){ opcodeErrEl.textContent="Code opérateur incorrect."; opcodeErrEl.classList.add('show'); }
-    if(opcodeEl){ opcodeEl.classList.add('err'); opcodeEl.focus(); }
+  var r=bookings[srcKey]||{}; var sp=srcKey.split('|'), dp=destKey.split('|');
+  var _before=snapState();
+  showToast("💾 Déplacement…");
+  var res=await sb.functions.invoke('booking-op',{ body:{ action:'move', from:{machine:sp[0],date:sp[1],slot:sp[2]}, to:{machine:dp[0],date:dp[1],slot:dp[2]}, nom:r.nom,prenom:r.prenom,operateur:r.operateur,projet:r.projet,encadrant1:r.encadrant1||'',encadrant2:r.encadrant2||'',encadrant3:r.encadrant3||'', pin:entered, opName:opName, opCode:enteredCode } });
+  if(res.error || !res.data || !res.data.ok){
+    var err=res.data&&res.data.error;
+    if(err==='auth'){ document.getElementById('movePinErr').style.display='block'; document.getElementById('movePin').classList.add('err'); }
+    else if(err==='badcode'){ if(opcodeErrEl){ opcodeErrEl.textContent="Code opérateur incorrect."; opcodeErrEl.classList.add('show'); } if(opcodeEl){ opcodeEl.classList.add('err'); opcodeEl.focus(); } }
+    else if(err==='occupied'){ showToast("❌ Case déjà occupée"); }
+    else showToast("❌ Erreur");
     return;
   }
-  moveBooking(srcKey,destKey);
+  bookings[destKey]=Object.assign({machine:dp[0],date:dp[1],slot:dp[2]}, {nom:r.nom,prenom:r.prenom,operateur:r.operateur,projet:r.projet,encadrant1:r.encadrant1||'',encadrant2:r.encadrant2||'',encadrant3:r.encadrant3||''}); delete bookings[srcKey];
+  addHistoryEntry("Déplacement réservation", sp.join(' | ')+' → '+dp.join(' | ')+' — '+r.nom+' '+r.prenom, _before.b, _before.d);
+  closeModal(); render(); showToast("✅ Réservation déplacée");
 }
 async function moveBooking(srcKey,destKey){
   var r=bookings[srcKey]; if(!r) return;
   if(bookings[destKey]||disabled[destKey]){ showToast("❌ Case déjà occupée"); render(); return; }
   var sp=srcKey.split('|'), dp=destKey.split('|');
-  var payload={nom:r.nom,prenom:r.prenom,operateur:r.operateur,projet:r.projet,pin:r.pin,encadrant1:r.encadrant1||'',encadrant2:r.encadrant2||'',encadrant3:r.encadrant3||''};
   var _before=snapState();
   showToast("💾 Déplacement…");
-  var ok=await dbAddBooking(dp[0],dp[1],dp[2],payload);
-  if(!ok) return;
-  await dbDeleteBooking(sp[0],sp[1],sp[2]);
-  bookings[destKey]=payload; delete bookings[srcKey];
+  var res=await sb.functions.invoke('booking-op',{ body:{ action:'move', adminCode:getAdminPw(), from:{machine:sp[0],date:sp[1],slot:sp[2]}, to:{machine:dp[0],date:dp[1],slot:dp[2]}, nom:r.nom,prenom:r.prenom,operateur:r.operateur,projet:r.projet,encadrant1:r.encadrant1||'',encadrant2:r.encadrant2||'',encadrant3:r.encadrant3||'' } });
+  if(res.error || !res.data || !res.data.ok){ showToast("❌ "+((res.data&&res.data.error)||'Déplacement échoué')); return; }
+  bookings[destKey]=Object.assign({machine:dp[0],date:dp[1],slot:dp[2]}, {nom:r.nom,prenom:r.prenom,operateur:r.operateur,projet:r.projet,encadrant1:r.encadrant1||'',encadrant2:r.encadrant2||'',encadrant3:r.encadrant3||''}); delete bookings[srcKey];
   addHistoryEntry("Déplacement réservation", sp.join(' | ')+' → '+dp.join(' | ')+' — '+r.nom+' '+r.prenom, _before.b, _before.d);
   closeModal(); render(); showToast("✅ Réservation déplacée");
 }

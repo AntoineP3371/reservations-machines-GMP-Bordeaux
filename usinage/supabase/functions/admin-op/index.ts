@@ -79,6 +79,34 @@ Deno.serve(async (req) => {
       return json({ ok: true })
     }
 
+    if (action === 'block') {
+      const { machine, date, slot, reason } = body
+      const { error } = await sb.from('disabled_slots').insert({ machine, date, slot, reason: reason || '' })
+      if (error && error.code !== '23505') throw error   // ignore doublon
+      return json({ ok: true })
+    }
+
+    if (action === 'unblock') {
+      const { machine, date, slot } = body
+      const { error } = await sb.from('disabled_slots').delete().match({ machine, date, slot })
+      if (error) throw error
+      return json({ ok: true })
+    }
+
+    if (action === 'blockHalfDay') {
+      const { machine, date, slots, reason } = body
+      // ne bloque pas un créneau déjà réservé
+      const booked = (await sb.from('bookings').select('slot').eq('machine', machine).eq('date', date)).data || []
+      const bookedSet = new Set((booked as any[]).map((x) => x.slot))
+      let count = 0
+      for (const slot of (slots || [])) {
+        if (bookedSet.has(slot)) continue
+        const { error } = await sb.from('disabled_slots').insert({ machine, date, slot, reason: reason || '' })
+        if (!error || error.code === '23505') count++
+      }
+      return json({ ok: true, count })
+    }
+
     return json({ ok: false, error: 'bad action' }, 400)
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500)
