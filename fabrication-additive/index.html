@@ -65,9 +65,6 @@
   .admin-tools{display:flex;flex-wrap:wrap;gap:6px}
   .btn-manage{background:var(--admin);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:.8rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
   .btn-manage:hover{background:var(--admin-dark)}
-  .btn-undo{background:#fff;color:var(--admin-dark);border:1px solid var(--admin);border-radius:6px;padding:4px 12px;font-size:.8rem;font-weight:600;cursor:pointer}
-  .btn-undo:hover:not(:disabled){background:var(--admin);color:#fff}
-  .btn-undo:disabled{opacity:.45;cursor:default}
 
   /* Cartes / sections */
   .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin-bottom:16px}
@@ -303,8 +300,6 @@
     <div class="admin-banner-top">
       <span class="admin-badge">⚙ ADMIN</span>
       <span class="admin-banner-label">Mode administrateur actif</span>
-      <button class="btn-undo" id="fabUndoBtn" onclick="undoParams()" title="Annuler le dernier enregistrement des paramètres" disabled>↶ Annuler</button>
-      <button class="btn-undo" id="fabRedoBtn" onclick="redoParams()" title="Rétablir l'enregistrement annulé" disabled>↷ Rétablir</button>
       <button class="logout-btn" onclick="logoutFabAdmin()">↩ Déconnecter</button>
     </div>
     <div class="admin-tools">
@@ -1075,7 +1070,7 @@ function askAdmin(){
   openCodeModal('admin','🔐 Administration','Entrez le mot de passe administrateur');
 }
 function logoutFabAdmin(){
-  _fabAdminCode=''; _fabIsSuper=false; _fabParamsCurrent=null;
+  _fabAdminCode=''; _fabIsSuper=false;
   sessionStorage.removeItem('fabAdminPw'); sessionStorage.removeItem('fabIsSuper');
   // fermeture directe (sans passer par closeOverlay, pour éviter une boucle avec ovSuper)
   ['ovCodeEnc','ovLimiteDef','ovNotifs','ovMachinesAdmin','ovToutes'].forEach(id=>document.getElementById(id).classList.remove('open'));
@@ -1088,15 +1083,6 @@ function applyFabAdminUI(){
   document.getElementById('adminBanner').classList.toggle('visible',on);
   document.getElementById('fabAdminBtn').classList.toggle('active',on);
   document.getElementById('fabSuperBtn').style.display=(on&&_fabIsSuper)?'':'none';
-  updateParamsUndoUI();
-  if(on && !_fabParamsCurrent) initFabParamsCurrent();
-}
-// Instantané de l'état enregistré des paramètres (pour Annuler/Rétablir depuis la bannière).
-async function initFabParamsCurrent(){
-  let codeEnc='0000';
-  try{ const {data}=await sb.functions.invoke('admin-op',{ body:{ action:'params-list', adminCode:_fabAdminCode } }); if(data&&data.ok&&data.params) codeEnc=data.params.code_encadrant||'0000'; }catch(e){}
-  _fabParamsCurrent=currentParamsRows(codeEnc);
-  updateParamsUndoUI();
 }
 function openFabSuper(){ openOverlay('ovSuper'); }
 function askOperateur(){
@@ -1772,8 +1758,6 @@ async function openParamWin(ov){
   let codeEnc='0000';
   try{ const {data}=await sb.functions.invoke('admin-op',{ body:{ action:'params-list', adminCode:_fabAdminCode } }); if(data&&data.ok&&data.params) codeEnc=data.params.code_encadrant||'0000'; }catch(e){}
   fillAdminForm(codeEnc);
-  _fabParamsCurrent=currentParamsRows(codeEnc);
-  updateParamsUndoUI();
   openOverlay(ov);
 }
 // Remplit le formulaire Paramètres avec les valeurs actuellement chargées.
@@ -1785,52 +1769,7 @@ function fillAdminForm(codeEnc){
   MACHINES.forEach(m=>addMachineRow(m));
 }
 
-// ── Historique Annuler / Rétablir des paramètres (persisté sur cet appareil) ──
-// Chaque entrée = les 4 lignes écrites par « Enregistrer » (code encadrant, limite, machines, notifs).
-let _fabParamsHist=(function(){ try{ const h=JSON.parse(localStorage.getItem('fabParamsHist')); if(h&&Array.isArray(h.undo)&&Array.isArray(h.redo)) return h; }catch(e){} return {undo:[],redo:[]}; })();
-let _fabParamsCurrent=null; // dernier état enregistré (instantané pris à l'ouverture de la fenêtre)
-function currentParamsRows(codeEnc){
-  return [
-    {cle:'code_encadrant',        valeur:(codeEnc==null?'0000':String(codeEnc))},
-    {cle:'limite_defaut',         valeur:String(limiteDefaut())},
-    {cle:'machines',              valeur:(PARAMS.machines!==undefined?PARAMS.machines:JSON.stringify(MACHINES))},
-    {cle:'operateurs_impression', valeur:(PARAMS.operateurs_impression!==undefined?PARAMS.operateurs_impression:JSON.stringify(null))}
-  ];
-}
-function saveParamsHist(){
-  if(_fabParamsHist.undo.length>20) _fabParamsHist.undo=_fabParamsHist.undo.slice(-20);
-  localStorage.setItem('fabParamsHist', JSON.stringify(_fabParamsHist));
-  updateParamsUndoUI();
-}
-function updateParamsUndoUI(){
-  const u=document.getElementById('fabUndoBtn'), r=document.getElementById('fabRedoBtn');
-  if(u) u.disabled=!_fabParamsHist.undo.length || !_fabParamsCurrent;
-  if(r) r.disabled=!_fabParamsHist.redo.length || !_fabParamsCurrent;
-}
-async function applyParamsRows(rows){
-  busy(true,'Restauration…');
-  const res=await sb.functions.invoke('admin-op',{ body:{ action:'params-save', adminCode:_fabAdminCode, params:rows } });
-  busy(false);
-  if(res.error || !res.data || !res.data.ok){ showToast('❌ '+((res.data&&res.data.error)||'Échec')); return false; }
-  await loadParams(); buildMachines(); onMachineChange(); updateProjetProgress();
-  const ce=rows.find(x=>x.cle==='code_encadrant');
-  fillAdminForm(ce?ce.valeur:'0000');
-  return true;
-}
-async function undoParams(){
-  if(!_fabParamsHist.undo.length || !_fabParamsCurrent) return;
-  const snap=_fabParamsHist.undo.pop();
-  if(await applyParamsRows(snap)){ _fabParamsHist.redo.push(_fabParamsCurrent); _fabParamsCurrent=snap; showToast('↶ Paramètres précédents restaurés'); }
-  else _fabParamsHist.undo.push(snap); // échec : on ne perd pas l'historique
-  saveParamsHist();
-}
-async function redoParams(){
-  if(!_fabParamsHist.redo.length || !_fabParamsCurrent) return;
-  const snap=_fabParamsHist.redo.pop();
-  if(await applyParamsRows(snap)){ _fabParamsHist.undo.push(_fabParamsCurrent); _fabParamsCurrent=snap; showToast('↷ Paramètres rétablis'); }
-  else _fabParamsHist.redo.push(snap);
-  saveParamsHist();
-}
+// (L'historique Annuler/Rétablir des paramètres a été retiré en v2.9.1 — plus nécessaire.)
 
 // ── Actions SUPER ADMIN (impression 3D) ──
 async function fabChangeAdminPw(){
@@ -1900,8 +1839,6 @@ async function saveAdmin(ov){
   const res=await sb.functions.invoke('admin-op',{ body:{ action:'params-save', adminCode:_fabAdminCode, params:rows } });
   busy(false);
   if(res.error || !res.data || !res.data.ok){ showToast('❌ '+((res.data&&res.data.error)||'Échec')); return; }
-  // Historique : l'état précédent devient annulable, le rétablissement repart de zéro.
-  if(_fabParamsCurrent){ _fabParamsHist.undo.push(_fabParamsCurrent); _fabParamsHist.redo=[]; _fabParamsCurrent=rows; saveParamsHist(); }
   await loadParams(); buildMachines(); onMachineChange(); updateProjetProgress();
   if(ov) closeOverlay(ov); showToast('💾 Paramètres enregistrés');
 }
