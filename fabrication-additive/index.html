@@ -880,7 +880,7 @@ async function submitDemande(){
     busy(true,'Envoi du fichier sur Drive…');
     const up=await uploadToDrive(renamed);
     busy(true,'Enregistrement de la demande…');
-    const {error}=await sb.from('demandes').insert({
+    const demande={
       etudiant_nom:nom, etudiant_prenom:prenom, projet, numero,
       fichier_nom:nomFichier, drive_file_id:up.id, drive_link:up.link,
       machine, volume_mm3:currentModel.volume_mm3, bbox:currentModel.bbox,
@@ -889,9 +889,14 @@ async function submitDemande(){
       usinage:currentOpts().usinage,
       finition:(document.querySelector('input[name=finition]:checked')||{}).value||'brouillon',
       notes:document.getElementById('fnotes').value.trim()
-    });
+    };
+    const res=await sb.functions.invoke('demande-op',{ body:{ action:'create', demande:demande } });
     busy(false);
-    if(error){ showToast('❌ Erreur : '+error.message); return; }
+    if(res.error || !res.data || !res.data.ok){
+      const e=res.data&&res.data.error;
+      showToast(e==='limit'?('⛔ Limite de '+(res.data.lim)+' impressions atteinte pour ce projet.'):('❌ Erreur : '+(e||'envoi')));
+      return;
+    }
     resetStudentForm();
     openOverlay('ovSuccess');
   }catch(e){ busy(false); showToast('❌ '+e.message); }
@@ -1063,12 +1068,10 @@ async function validerDemande(id, ok){
   const comEl=document.getElementById('enccom-'+id);
   const commentaire=comEl?comEl.value.trim():'';
   busy(true,'Mise à jour…');
-  const patch={ statut: ok?'validee':'refusee', encadrant_nom:currentEncadrantNom,
-                encadrant_valide_at:new Date().toISOString(), encadrant_commentaire:commentaire };
-  const {data,error}=await sb.from('demandes').update(patch).eq('id',id).select().single();
+  const res=await sb.functions.invoke('demande-op',{ body:{ action:'valider', id:id, ok:ok, commentaire:commentaire, encadrantCode:_encadrantCode, encadrantNom:currentEncadrantNom } });
   busy(false);
-  if(error){ showToast('❌ '+error.message); return; }
-  if(ok){ const n=await notifyOperateurs(data||{}); showToast(n>0?'✔️ Demande validée — '+n+' opérateur(s) notifié(s)':'✔️ Demande validée'); }
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ '+((res.data&&res.data.error==='auth')?'Accès refusé — reconnectez-vous':'Erreur')); return; }
+  if(ok){ const n=await notifyOperateurs(res.data.demande||{}); showToast(n>0?'✔️ Demande validée — '+n+' opérateur(s) notifié(s)':'✔️ Demande validée'); }
   else showToast('✖️ Demande refusée');
   loadEncadrant(true);
 }
@@ -1209,34 +1212,24 @@ async function loadOperateur(){
 }
 // Réordonne la file : renumérote toutes les demandes validées après le déplacement (déterministe).
 async function deplacerFile(id, dir){
-  const res=await sb.from('demandes').select('*').eq('statut','validee');
-  if(res.error){ showToast('❌ '+res.error.message); return; }
-  const data=(res.data||[]).filter(d=>!d.archive);
-  data.sort((a,b)=>{ if((b.priorite||0)!==(a.priorite||0)) return (b.priorite||0)-(a.priorite||0); return new Date(a.created_at)-new Date(b.created_at); });
-  const i=data.findIndex(d=>d.id===id); const j=i+dir;
-  if(i<0 || j<0 || j>=data.length) return;
-  const tmp=data[i]; data[i]=data[j]; data[j]=tmp; // échange
   busy(true,'Réordonnancement…');
-  // priorité décroissante : le 1er de la file a la plus grande valeur
-  for(let k=0;k<data.length;k++){
-    const up=await sb.from('demandes').update({priorite:(data.length-k)*10}).eq('id',data[k].id);
-    if(up.error){ busy(false); showToast(/priorite/.test(up.error.message)?"❌ Colonne 'priorite' manquante — relancez schema.sql":('❌ '+up.error.message)); return; }
-  }
+  const res=await sb.functions.invoke('demande-op',{ body:{ action:'reorder', id:id, dir:dir, operateur:currentOperateurNom, opCode:_operateurCode } });
   busy(false);
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ '+((res.data&&res.data.error==='auth')?'Accès refusé':'Erreur')); return; }
   loadOperateur();
 }
 async function archiver(id){
   busy(true,'Archivage…');
-  const {error}=await sb.from('demandes').update({archive:true}).eq('id',id);
+  const res=await sb.functions.invoke('demande-op',{ body:{ action:'archive', id:id, archive:true, operateur:currentOperateurNom, opCode:_operateurCode } });
   busy(false);
-  if(error){ showToast('❌ '+error.message); return; }
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ '+((res.data&&res.data.error==='auth')?'Accès refusé':'Erreur')); return; }
   showToast('🗄️ Demande archivée'); loadOperateur();
 }
 async function desarchiver(id){
   busy(true,'Désarchivage…');
-  const {error}=await sb.from('demandes').update({archive:false}).eq('id',id);
+  const res=await sb.functions.invoke('demande-op',{ body:{ action:'archive', id:id, archive:false, operateur:currentOperateurNom, opCode:_operateurCode } });
   busy(false);
-  if(error){ showToast('❌ '+error.message); return; }
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ '+((res.data&&res.data.error==='auth')?'Accès refusé':'Erreur')); return; }
   showToast('↩︎ Demande désarchivée'); openArchives(); loadOperateur();
 }
 async function openArchives(){
@@ -1261,12 +1254,9 @@ async function openArchives(){
 }
 async function majStatut(id, statut){
   busy(true,'Mise à jour…');
-  const patch={statut, operateur_nom:currentOperateurNom||''};
-  if(statut==='imprimee') patch.imprime_at=new Date().toISOString();
-  if(statut==='validee'){ patch.en_cours_at=null; patch.imprime_at=null; }
-  const {error}=await sb.from('demandes').update(patch).eq('id',id);
+  const res=await sb.functions.invoke('demande-op',{ body:{ action:'statut', id:id, statut:statut, operateur:currentOperateurNom, opCode:_operateurCode } });
   busy(false);
-  if(error){ showToast('❌ '+error.message); return; }
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ '+((res.data&&res.data.error==='auth')?'Accès refusé':'Erreur')); return; }
   showToast(statut==='imprimee'?'✅ Marquée terminée':(statut==='validee'?'↩︎ Remise en attente':'Mise à jour'));
   loadOperateur();
 }
@@ -1276,9 +1266,9 @@ async function lancerImpression(id){
   const duree=hh*60+mm;
   if(!duree){ showToast('⚠️ Indiquez la durée réelle (heures / minutes) avant de lancer'); return; }
   busy(true,'Démarrage…');
-  const {error}=await sb.from('demandes').update({statut:'en_cours', duree_reelle_min:duree, en_cours_at:new Date().toISOString(), imprime_at:null, operateur_nom:currentOperateurNom||''}).eq('id',id);
+  const res=await sb.functions.invoke('demande-op',{ body:{ action:'lancer', id:id, duree:duree, operateur:currentOperateurNom, opCode:_operateurCode } });
   busy(false);
-  if(error){ showToast('❌ '+error.message); return; }
+  if(res.error || !res.data || !res.data.ok){ showToast('❌ '+((res.data&&res.data.error==='auth')?'Accès refusé':'Erreur')); return; }
   showToast('▶️ Impression lancée — minuteur démarré ('+duree+' min)');
   loadOperateur();
 }
