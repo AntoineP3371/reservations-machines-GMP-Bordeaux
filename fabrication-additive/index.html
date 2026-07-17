@@ -157,6 +157,7 @@
   tr:hover td{background:#f7fbfd}
   .cell-actions{display:flex;gap:5px;flex-wrap:wrap}
   .op-counter{display:none} /* visible uniquement en mobile (carrousel) */
+  .op-mob-info{display:none} /* résumé condensé n°/étudiant/encadrant : mobile seulement */
 
   /* Badges de statut */
   .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:.74rem;font-weight:700;white-space:nowrap}
@@ -275,6 +276,10 @@
     #operateurResults .cell-actions .duree-wrap{grid-column:1/-1;justify-content:center;font-size:.8rem}
     #operateurResults .op-duree{width:64px;height:42px;font-size:1rem;text-align:center}
     #operateurResults .cell-comment .btn{width:100%;height:42px;justify-content:center;margin-top:6px}
+    /* Condenser projet/n°/étudiant/encadrant : on masque les 3 cellules séparées et on
+       affiche un résumé compact sous le projet (gain de place, lecture d'un coup d'œil). */
+    #operateurResults .op-hide-mob{display:none}
+    #operateurResults .op-mob-info{display:block;text-align:left;font-size:.82rem;color:var(--muted);margin-top:5px;line-height:1.5}
     /* Cartes encadrant */
     .demande-card .dc-actions .btn{flex:1;justify-content:center}
     .table-wrap{border:none}
@@ -802,6 +807,8 @@ function parseOperateursNotif(){
 function parseLimites(){ try{ const o=JSON.parse(PARAMS.limites_projets); if(o&&typeof o==='object') return o; }catch(e){} return {}; }
 function limiteDefaut(){ return Math.round(num(PARAMS.limite_defaut, LIMITE_PAR_DEFAUT)); }
 function projetLimite(projet){ const v=LIMITES_PROJETS[projet]; return v!=null ? Math.round(num(v, limiteDefaut())) : limiteDefaut(); }
+// N° de la demande affiché par rapport à la limite d'impressions du projet, ex. « 12 / 20 ».
+function numeroLabel(d){ if(!d||!d.numero) return '?'; return d.numero+' / '+projetLimite(d.projet); }
 function parseMachines(){
   try{
     const arr=JSON.parse(PARAMS.machines);
@@ -1055,7 +1062,7 @@ function base64ToFile(b64,name,mime){
   for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
   return new File([bytes],name,{type:mime||'application/octet-stream'});
 }
-function voir3D(id){ const d=demandesById[id]; if(d) openFsViewer(d.drive_file_id, d.fichier_nom, d.etudiant_prenom+' '+d.etudiant_nom+' — '+d.projet+' n°'+(d.numero||'?'), d); }
+function voir3D(id){ const d=demandesById[id]; if(d) openFsViewer(d.drive_file_id, d.fichier_nom, d.etudiant_prenom+' '+d.etudiant_nom+' — '+d.projet+' n°'+numeroLabel(d), d); }
 async function openFsViewer(driveId, fichierNom, meta, dmd){
   document.getElementById('fsTitle').textContent=fichierNom||'Visualisation 3D';
   document.getElementById('fsMeta').textContent=meta||'';
@@ -1242,7 +1249,7 @@ function demandeCardEncadrant(d){
 function dateLabel(iso){ if(!iso) return ''; const dt=new Date(iso); return dt.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}); }
 function dateHeureLabel(iso){ if(!iso) return ''; const dt=new Date(iso); return dt.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'})+' à '+dt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }
 // En-tête et lignes de traitement communes aux cartes (suivi étudiant, vue encadrant).
-function titreDemande(d){ return "Demande n°"+(d.numero||'?')+" faite par "+esc((d.etudiant_prenom||'')+' '+(d.etudiant_nom||''))+" pour le projet "+esc(d.projet||'—')+" le "+dateHeureLabel(d.created_at); }
+function titreDemande(d){ return "Demande n°"+numeroLabel(d)+" faite par "+esc((d.etudiant_prenom||'')+' '+(d.etudiant_nom||''))+" pour le projet "+esc(d.projet||'—')+" le "+dateHeureLabel(d.created_at); }
 function ligneTraitee(d){ return d.encadrant_nom ? "<br>✔️ Traité par "+esc(d.encadrant_nom)+(d.encadrant_valide_at?" le "+dateHeureLabel(d.encadrant_valide_at):"") : ""; }
 function ligneOperee(d){ if(!d.operateur_nom) return ""; const at=d.imprime_at||d.en_cours_at; return "<br>🛠️ Opérée par "+esc(d.operateur_nom)+(at?" le "+dateHeureLabel(at):""); }
 // Ligne de commentaire avec auteur identifié et horodatage.
@@ -1390,17 +1397,18 @@ async function loadOperateur(){
       "<button class='btn btn-ghost' onclick='telechargerStep("+d.id+")'>⬇ STEP</button>"+
       queueBtns+
       "<span class='duree-wrap' title='Durée réelle d\\'impression'><input type='number' class='op-duree' id='dureeh-"+d.id+"' value='"+dh+"' min='0'> h <input type='number' class='op-duree' id='dureem-"+d.id+"' value='"+dm+"' min='0' max='59'> min</span>"+
+      (d.statut!=='attente_info'?"<button class='btn btn-amber' onclick='majStatut("+d.id+",\"attente_info\")' title='Signaler que le demandeur doit venir vous voir pour confirmer des éléments'>🙋 Att. info</button>":"")+
       "<button class='btn btn-amber' onclick='lancerImpression("+d.id+")'>▶️ Lancer</button>"+
       "<button class='btn btn-green' onclick='majStatut("+d.id+",\"imprimee\")'>✅ Terminée</button>"+
-      (d.statut!=='attente_info'?"<button class='btn btn-amber' onclick='majStatut("+d.id+",\"attente_info\")' title='Signaler que le demandeur doit venir vous voir pour confirmer des éléments'>🙋 Att. info</button>":"")+
-      "<button class='btn btn-nav' onclick='majStatut("+d.id+",\"validee\")' title='Remettre en attente'>↩︎</button>"+
-      (d.statut==='imprimee'?"<button class='btn btn-ghost' onclick='archiver("+d.id+")' title='Archiver'>🗄️</button>":"")+
+      "<button class='btn btn-ghost' onclick='majStatut("+d.id+",\"validee\")' title='Remettre en attente'>↩︎ Remettre en attente</button>"+
+      (d.statut==='imprimee'?"<button class='btn btn-ghost' onclick='archiver("+d.id+")' title='Archiver'>🗄️ Archiver</button>":"")+
       "</div>";
     return "<tr class='st-"+d.statut+"'>"+
-      "<td data-label='Projet'><b>"+esc(d.projet)+"</b><br><span style='color:var(--muted);font-size:.78rem'>"+esc(d.fichier_nom)+"</span><br><span class='com-meta'>📅 "+dateHeureLabel(d.created_at)+"</span></td>"+
-      "<td data-label='N°'>"+(d.numero||'?')+"</td>"+
-      "<td data-label='Étudiant'>"+esc(d.etudiant_prenom+' '+d.etudiant_nom)+"</td>"+
-      "<td data-label='Encadrant'>"+esc(d.encadrant_nom||'—')+"</td>"+
+      "<td data-label='Projet'><b>"+esc(d.projet)+"</b><br><span style='color:var(--muted);font-size:.78rem'>"+esc(d.fichier_nom)+"</span><br><span class='com-meta'>📅 "+dateHeureLabel(d.created_at)+"</span>"+
+        "<div class='op-mob-info'>N° "+numeroLabel(d)+" · 👤 "+esc(d.etudiant_prenom+' '+d.etudiant_nom)+" · 🎓 "+esc(d.encadrant_nom||'—')+"</div></td>"+
+      "<td data-label='N°' class='op-hide-mob'>"+numeroLabel(d)+"</td>"+
+      "<td data-label='Étudiant' class='op-hide-mob'>"+esc(d.etudiant_prenom+' '+d.etudiant_nom)+"</td>"+
+      "<td data-label='Encadrant' class='op-hide-mob'>"+esc(d.encadrant_nom||'—')+"</td>"+
       "<td data-label='Paramètres'>"+params+"</td>"+
       "<td data-label='Comm. étudiant' class='cell-comment'>"+(d.notes?esc(d.notes)+comMeta((d.etudiant_prenom||'')+' '+(d.etudiant_nom||''), d.created_at):'—')+"</td>"+
       "<td data-label='Comm. encadrant' class='cell-comment'>"+(d.encadrant_commentaire?esc(d.encadrant_commentaire)+comMeta(d.encadrant_commentaire_par||d.encadrant_nom, d.encadrant_commentaire_at||d.encadrant_valide_at):'—')+"</td>"+
@@ -1487,7 +1495,7 @@ async function openArchives(){
   box.innerHTML="<div class='table-wrap'><table class='op-table'><thead><tr><th>Projet / Fichier</th><th>N°</th><th>Étudiant</th><th>Machine</th><th>Temps</th><th>Statut</th><th>Actions</th></tr></thead><tbody>"+
     data.map(d=>"<tr class='st-"+d.statut+"'>"+
       "<td data-label='Projet'><b>"+esc(d.projet)+"</b><br><span style='color:var(--muted);font-size:.78rem'>"+esc(d.fichier_nom)+"</span><br><span class='com-meta'>📅 "+dateHeureLabel(d.created_at)+"</span></td>"+
-      "<td data-label='N°'>"+(d.numero||'?')+"</td>"+
+      "<td data-label='N°'>"+numeroLabel(d)+"</td>"+
       "<td data-label='Étudiant'>"+esc(d.etudiant_prenom+' '+d.etudiant_nom)+"</td>"+
       "<td data-label='Machine'>"+machineLabel(d.machine)+"</td>"+
       "<td data-label='Temps'>"+esc(tempsLabel(d))+"</td>"+
@@ -1711,7 +1719,7 @@ async function openToutes(){
     const dt=d.created_at?new Date(d.created_at):null;
     return "<tr"+(d.archive?" style='opacity:.55'":"")+">"+
       "<td><b>"+esc(d.projet||'—')+"</b><br><span style='color:var(--muted);font-size:.78rem'>"+esc(d.fichier_nom||'—')+"</span><br><span class='com-meta'>📅 "+(dt?dateHeureLabel(d.created_at):'—')+"</span></td>"+
-      "<td>"+(d.numero||'?')+"</td>"+
+      "<td>"+numeroLabel(d)+"</td>"+
       "<td>"+esc((d.etudiant_prenom||'')+' '+(d.etudiant_nom||''))+"</td>"+
       "<td>"+esc(machineLabel(d.machine))+"</td>"+
       "<td>"+(d.finition==='finition'?'Finition':'Brouillon')+"</td>"+
