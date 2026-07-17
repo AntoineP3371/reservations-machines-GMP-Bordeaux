@@ -717,7 +717,18 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 // ─────────────────────────────────────────────────────────────────────────
 let etudiants = [];          // [{nom,prenom,projet,enc1,enc2}]
 let operateurs = [];         // [{name,code}]
-let projets = [];            // liste distincte
+let projets = [];            // liste distincte (union étudiants + demandes)
+let _projetsEtu = [];        // projets issus de la liste des étudiants importés
+let _projetsDem = [];        // projets présents dans les demandes (ex. créés via « Autre projet… »)
+function rebuildProjets(){ projets = [...new Set([..._projetsEtu, ..._projetsDem])].sort((a,b)=>a.localeCompare(b)); }
+// Récupère les noms de projets présents dans les demandes (pour qu'un projet créé à la volée
+// via « Autre projet… » apparaisse bien dans les menus Suivi / dépôt, pas seulement s'il est
+// dans la liste des étudiants).
+async function loadProjetsDemandes(){
+  const {data,error} = await sb.from('demandes').select('projet');
+  _projetsDem = (!error && data) ? [...new Set(data.map(d=>(d.projet||'').trim()).filter(Boolean))] : [];
+  rebuildProjets();
+}
 let encadrantsList = [];     // liste distincte des noms d'encadrants
 let projetEncadrants = {};   // { projet: Set(noms encadrants) }
 let PARAMS = {};             // paramètres depuis la table 'parametres'
@@ -819,7 +830,8 @@ function parseMachines(){
 async function loadEtudiants(){
   const {data,error} = await sb.from('etudiants').select('*').order('projet').order('nom');
   etudiants = (!error && data) ? data.map(r=>({nom:r.nom||'',prenom:r.prenom||'',projet:r.projet||'',formation:r.formation||'',enc1:r.encadrant1||'',enc2:r.encadrant2||'',enc3:r.encadrant3||''})) : [];
-  projets = [...new Set(etudiants.map(e=>e.projet).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  _projetsEtu = [...new Set(etudiants.map(e=>e.projet).filter(Boolean))];
+  rebuildProjets();
   const encs=[]; projetEncadrants={};
   etudiants.forEach(e=>{
     if(e.enc1)encs.push(e.enc1); if(e.enc2)encs.push(e.enc2); if(e.enc3)encs.push(e.enc3);
@@ -1948,6 +1960,9 @@ async function refreshReferenceData(kind){
     updateProjetProgress();
   }
 }
+// Nouvelle demande (potentiellement un projet créé via « Autre projet… ») : on réactualise la
+// liste des projets et les menus déroulants (Suivi + dépôt), avec préservation du choix en cours.
+const debouncedRefProjets = debounce(async ()=>{ await loadProjetsDemandes(); buildStudentLists(); buildSuiviLists(); }, 600);
 const debouncedRefEtud = debounce(()=>refreshReferenceData('etudiants'), 500);
 const debouncedRefOps  = debounce(()=>refreshReferenceData('operateurs'), 500);
 const debouncedRefPrm  = debounce(()=>refreshReferenceData('parametres'), 500);
@@ -1957,6 +1972,7 @@ function subscribeRealtime(){
   if(realtimeChannel){ try{ sb.removeChannel(realtimeChannel); }catch(e){} }
   realtimeChannel = sb.channel('impression3d-live')
     .on('postgres_changes',{event:'*',schema:'public',table:'demandes'}, debouncedRefresh)
+    .on('postgres_changes',{event:'*',schema:'public',table:'demandes'}, debouncedRefProjets)
     .on('postgres_changes',{event:'*',schema:'public',table:'etudiants'}, debouncedRefEtud)
     .on('postgres_changes',{event:'*',schema:'public',table:'operateurs'}, debouncedRefOps)
     .on('postgres_changes',{event:'*',schema:'public',table:'parametres'}, debouncedRefPrm)
@@ -1994,9 +2010,9 @@ window.addEventListener('pageshow', function(e){
 // ─────────────────────────────────────────────────────────────────────────
 (async function init(){
   applyFabAdminUI(); // restaure la bannière admin si la session est encore active
-  await Promise.all([loadParams(), loadEtudiants(), loadOperateurs()]);
+  await Promise.all([loadParams(), loadEtudiants(), loadOperateurs(), loadProjetsDemandes()]);
   buildMachines();
-  buildSuiviLists();
+  buildStudentLists(); buildSuiviLists();
   subscribeRealtime();
 })();
 </script>

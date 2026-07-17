@@ -165,7 +165,7 @@
   </div>
 
   <footer>Atelier GMP — IUT Bordeaux</footer>
-  <div class="site-version">v2.12.0</div>
+  <div class="site-version">v2.13.0</div>
 
 <div class="pv-overlay" id="pvOverlay"><div class="pv-modal" id="pvModal"></div></div>
 <div class="pv-toast" id="pvToast"></div>
@@ -272,9 +272,16 @@ async function saveOperateurs(){
 // ══════════════ ÉTUDIANTS / PROJETS ══════════════
 let _etudPending=null;
 let _etudList=[];
+let _etudExtra=[]; // demandeurs de projets créés via « Autre projet » (hors liste étudiants importée)
 function pvDownloadEtud(){
   const rows=[["Nom","Prenom","Projet","Formation","Encadrant1","Encadrant2","Encadrant3"]];
   (_etudList||[]).forEach(e=>rows.push([e.nom||'',e.prenom||'',e.projet||'',e.formation||'',e.encadrant1||'',e.encadrant2||'',e.encadrant3||'']));
+  // Projets créés via « Autre projet » (hors liste importée) : section distincte en fin de fichier.
+  if((_etudExtra||[]).length){
+    rows.push([]);
+    rows.push(["Projets hors liste importée (créés via « Autre projet »)","","","","","",""]);
+    _etudExtra.forEach(e=>rows.push([e.nom||'',e.prenom||'',e.projet||'','','','','']));
+  }
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:18},{wch:18},{wch:25},{wch:12},{wch:20},{wch:20},{wch:20}];
   XLSX.utils.book_append_sheet(wb,ws,"Etudiants");
@@ -297,6 +304,17 @@ async function openEtudiants(){
   const et=(!error&&data)?data:[];
   _etudList=et;
   const projets=[...new Set(et.map(e=>e.projet).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  // Projets présents dans les demandes mais absents de la liste étudiants (créés via « Autre projet »).
+  const projetsEtuSet=new Set(et.map(e=>(e.projet||'').trim()).filter(Boolean));
+  _etudExtra=[];
+  const dem=await sb.from('demandes').select('projet, etudiant_nom, etudiant_prenom');
+  if(!dem.error && dem.data){
+    const seen=new Set();
+    dem.data.forEach(d=>{ const p=(d.projet||'').trim(); if(!p||projetsEtuSet.has(p)) return;
+      const key=(d.etudiant_nom||'')+'|'+(d.etudiant_prenom||'')+'|'+p; if(seen.has(key)) return; seen.add(key);
+      _etudExtra.push({nom:d.etudiant_nom||'',prenom:d.etudiant_prenom||'',projet:p}); });
+    _etudExtra.sort((a,b)=>a.projet.localeCompare(b.projet)||a.nom.localeCompare(b.nom));
+  }
   let list;
   if(!et.length){ list="<div class='pv-count'>Aucun étudiant importé.</div>"; }
   else{
@@ -319,7 +337,7 @@ async function openEtudiants(){
     "<h2>👨‍🎓 Étudiants / Projets</h2>"+
     "<div class='pv-meta'>Liste commune à Réservation Machines et Impression 3D.</div>"+
     list+
-    (et.length?"<div style='margin-top:6px'><button class='pv-btn' onclick='pvDownloadEtud()'>⬇ Télécharger la liste (xlsx)</button></div>":"")+
+    ((et.length||_etudExtra.length)?"<div style='margin-top:6px'><button class='pv-btn' onclick='pvDownloadEtud()'>⬇ Télécharger la liste (xlsx)</button>"+(_etudExtra.length?"<span class='pv-meta' style='margin-left:8px'>+ "+_etudExtra.length+" projet(s) hors liste inclus</span>":"")+"</div>":"")+
     renameBlock+
     "<div style='font-weight:700;font-size:.85rem;margin:14px 0 4px'>Importer une liste (.xlsx)</div>"+
     "<div class='pv-meta'>Colonnes : Nom, Prenom, Projet, Formation (2A, 2I ou 3A), Encadrant1, Encadrant2, Encadrant3.</div>"+
