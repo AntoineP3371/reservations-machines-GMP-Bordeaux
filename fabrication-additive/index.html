@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Thème clair/sombre : résolu AVANT l'affichage (réglage système ou choix mémorisé) pour éviter tout scintillement. -->
+<script>(function(){try{var t=localStorage.getItem('theme');if(t!=='dark'&&t!=='light')t=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <title>Demandes d'impression 3D — GMP</title>
 <meta name="theme-color" content="#0083ba">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -294,6 +296,89 @@
     table.simple-table td:first-child{word-break:break-word;max-width:120px}
     table.simple-table .lim-input{width:64px}
   }
+</style>
+
+<!-- ═══ Refonte visuelle (CSS seul — aucun contenu ni logique modifié) ═══ -->
+<style>
+  :root{
+    --bg:#eef3f6; --border:#d5e1e9;
+    --primary:#0e7ca8; --primary-light:#e1f1f8; --primary-dark:#08556f;
+    --text:#10222b; --muted:#5b7686;
+    --danger:#c2352c; --danger-light:#fbe7e5;
+    --admin:#6d4ae0; --admin-light:#edeafb; --admin-dark:#4b2fb0;
+    --additive:#6d4ae0; --additive-light:#edeafb; --additive-dark:#4b2fb0;
+    --green:#15803d; --green-light:#e3f2e4;
+    --amber:#b45309; --amber-light:#fbeeda;
+    --radius:12px; --shadow:0 1px 2px rgba(16,34,43,.05), 0 8px 22px rgba(16,34,43,.06);
+  }
+  body{
+    background:
+      linear-gradient(rgba(16,34,43,.028) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(16,34,43,.028) 1px,transparent 1px),
+      var(--bg);
+    background-size:34px 34px, 34px 34px, auto;
+    background-attachment:fixed;
+  }
+  .card,.modal{border-radius:16px}
+  .demande-card{border-radius:0 14px 14px 0}
+  .btn{border-radius:9px}
+  .btn:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+  input,select,textarea{border-radius:9px}
+  input:focus,select:focus,textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-light)}
+
+  /* Bouton bascule thème (haut-droite, en miroir du bouton Accueil) */
+  .theme-toggle{position:fixed;top:12px;right:12px;z-index:70;width:38px;height:38px;border-radius:9px;
+    border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:1.05rem;cursor:pointer;
+    box-shadow:var(--shadow);display:inline-flex;align-items:center;justify-content:center;transition:border-color .15s}
+  .theme-toggle:hover{border-color:var(--primary)}
+
+  /* ═══ THÈME SOMBRE ═══ */
+  :root[data-theme="dark"]{
+    --bg:#0d1a21; --surface:#16262f; --border:#294551;
+    --primary:#3ba7d0; --primary-light:#12313f; --primary-dark:#8fd2ea;
+    --text:#e6eef2; --muted:#93aab7;
+    --danger:#e4675e; --danger-light:#331715;
+    --admin:#a791f0; --admin-light:#241d3a; --admin-dark:#cbbaf8;
+    --additive:#a791f0; --additive-light:#241d3a; --additive-dark:#cbbaf8;
+    --green:#4fb166; --green-light:#12301f;
+    --amber:#d98a2b; --amber-light:#33260f;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px rgba(0,0,0,.45);
+  }
+  :root[data-theme="dark"] body{
+    background:
+      linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px),
+      var(--bg);
+    background-size:34px 34px, 34px 34px, auto; background-attachment:fixed;
+  }
+  :root[data-theme="dark"] input,:root[data-theme="dark"] select,:root[data-theme="dark"] textarea{background:var(--surface);color:var(--text)}
+  :root[data-theme="dark"] input:focus,:root[data-theme="dark"] select:focus,:root[data-theme="dark"] .enc-comment:focus{background:var(--surface)}
+  :root[data-theme="dark"] .op-duree{background:var(--surface);color:var(--text)}
+  :root[data-theme="dark"] tr:hover td{background:#1c2f39}
+  :root[data-theme="dark"] .demande-card.st-en_attente,:root[data-theme="dark"] .op-table tbody tr.st-en_attente td{background:#2a2410}
+  :root[data-theme="dark"] .demande-card.st-validee,:root[data-theme="dark"] .op-table tbody tr.st-validee td{background:#102530}
+  :root[data-theme="dark"] .demande-card.st-en_cours,:root[data-theme="dark"] .op-table tbody tr.st-en_cours td{background:#191c33}
+  :root[data-theme="dark"] .demande-card.st-imprimee,:root[data-theme="dark"] .op-table tbody tr.st-imprimee td{background:#0f2a1c}
+  :root[data-theme="dark"] .demande-card.st-refusee,:root[data-theme="dark"] .op-table tbody tr.st-refusee td{background:#2b1613}
+  :root[data-theme="dark"] .demande-card.st-attente_info,:root[data-theme="dark"] .op-table tbody tr.st-attente_info td{background:#2b1c0f}
+  @media(max-width:640px){
+    :root[data-theme="dark"] .op-table tbody tr.st-en_attente{background:#2a2410}
+    :root[data-theme="dark"] .op-table tbody tr.st-validee{background:#102530}
+    :root[data-theme="dark"] .op-table tbody tr.st-en_cours{background:#191c33}
+    :root[data-theme="dark"] .op-table tbody tr.st-imprimee{background:#0f2a1c}
+    :root[data-theme="dark"] .op-table tbody tr.st-refusee{background:#2b1613}
+  }
+  :root[data-theme="dark"] .badge.en_cours{background:#23264a;color:#a5b4fc}
+  :root[data-theme="dark"] .badge.attente_info{background:#33240f;color:#f0a15b}
+  :root[data-theme="dark"] .param-tag.bro{background:#33280f;color:#e0a64a}
+  :root[data-theme="dark"] .stat-card.ok{background:#0f2a1c;border-color:#2b6b46}
+  :root[data-theme="dark"] .stat-card.ko{background:#2b1613;border-color:#7a3b36}
+  :root[data-theme="dark"] .countdown,:root[data-theme="dark"] .fs-countdown{color:#a5b4fc}
+  :root[data-theme="dark"] b[style*="#166534"]{color:#63c07d!important}
+  :root[data-theme="dark"] b[style*="#c2410c"]{color:#f0975b!important}
+  :root[data-theme="dark"] b[style*="#4338ca"]{color:#a5b4fc!important}
+  :root[data-theme="dark"] .btn-ok:hover{background:var(--primary);filter:brightness(1.12)}
+  :root[data-theme="dark"] .pbar{background:#1c2f39}
 </style>
 </head>
 <body>
@@ -1612,7 +1697,7 @@ async function loadOperateur(){
       "</div>";
     return "<tr class='st-"+d.statut+"'>"+
       "<td data-label='Projet'><b>"+esc(d.projet)+"</b><br><span style='color:var(--muted);font-size:.78rem'>"+esc(d.fichier_nom)+"</span><br><span class='com-meta'>📅 "+dateHeureLabel(d.created_at)+"</span>"+
-        "<div class='op-mob-info'>N° "+numeroLabel(d)+" · 👤 "+esc(d.etudiant_prenom+' '+d.etudiant_nom)+" · 👨‍🏫 "+encadrantsProjetHtml(d.projet, d.encadrant_nom)+"</div></td>"+
+        "<div class='op-mob-info'>N° "+numeroLabel(d)+" · 👤 "+esc(d.etudiant_prenom+' '+d.etudiant_nom)+"<br>👨‍🏫 "+encadrantsProjetHtml(d.projet, d.encadrant_nom)+"</div></td>"+
       "<td data-label='N°' class='op-hide-mob'>"+numeroLabel(d)+"</td>"+
       "<td data-label='Étudiant' class='op-hide-mob'>"+esc(d.etudiant_prenom+' '+d.etudiant_nom)+"</td>"+
       "<td data-label='Encadrants du projet' class='op-hide-mob'>"+encadrantsProjetHtml(d.projet, d.encadrant_nom)+"</td>"+
@@ -2205,6 +2290,15 @@ window.addEventListener('pageshow', function(e){
   buildStudentLists(); buildSuiviLists();
   subscribeRealtime();
 })();
+</script>
+
+<!-- Bouton bascule thème clair / sombre -->
+<button id="themeToggle" class="theme-toggle" onclick="toggleTheme()" aria-label="Basculer le thème clair ou sombre" title="Thème clair / sombre">🌙</button>
+<script>
+  function applyThemeIcon(){ var d=document.documentElement.getAttribute('data-theme')==='dark'; var b=document.getElementById('themeToggle'); if(b) b.textContent=d?'☀️':'🌙'; }
+  function toggleTheme(){ var d=document.documentElement.getAttribute('data-theme')==='dark'; var n=d?'light':'dark'; document.documentElement.setAttribute('data-theme',n); try{localStorage.setItem('theme',n);}catch(e){} applyThemeIcon(); }
+  applyThemeIcon();
+  try{ matchMedia('(prefers-color-scheme:dark)').addEventListener('change',function(e){ if(!localStorage.getItem('theme')){ document.documentElement.setAttribute('data-theme', e.matches?'dark':'light'); applyThemeIcon(); } }); }catch(e){}
 </script>
 </body>
 </html>

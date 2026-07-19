@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>(function(){try{var t=localStorage.getItem('theme');if(t!=='dark'&&t!=='light')t=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <title>Atelier GMP</title>
 <meta name="apple-mobile-web-app-title" content="Atelier GMP">
 <meta name="application-name" content="Atelier GMP">
@@ -102,8 +103,65 @@
   .site-version{margin-top:6px;font-size:.7rem;color:var(--muted);opacity:.55;text-align:center}
   @media(max-width:640px){.brand h1{font-size:1.4rem}.cards{gap:16px}}
 </style>
+
+<!-- ═══ Refonte visuelle (CSS seul — aucun contenu ni logique modifié) ═══ -->
+<style>
+  :root{
+    --bg:#eef3f6; --border:#d5e1e9;
+    --primary:#0e7ca8; --primary-light:#e1f1f8; --primary-dark:#08556f;
+    --text:#10222b; --muted:#5b7686;
+    --danger:#c2352c; --danger-light:#fbe7e5;
+    --additive:#6d4ae0; --additive-light:#edeafb; --additive-dark:#4b2fb0;
+    --admin:#6d4ae0; --admin-dark:#4b2fb0; --green:#15803d;
+  }
+  body{
+    background:
+      linear-gradient(rgba(16,34,43,.028) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(16,34,43,.028) 1px,transparent 1px),
+      var(--bg);
+    background-size:34px 34px, 34px 34px, auto;
+    background-attachment:fixed;
+  }
+  .card{border-radius:16px}
+  .btn:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+
+  /* Bouton bascule thème */
+  .theme-toggle{position:fixed;top:12px;right:12px;z-index:70;width:38px;height:38px;border-radius:9px;
+    border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:1.05rem;cursor:pointer;
+    box-shadow:0 2px 12px rgba(0,40,60,.10);display:inline-flex;align-items:center;justify-content:center;transition:border-color .15s}
+  .theme-toggle:hover{border-color:var(--primary)}
+
+  /* ═══ THÈME SOMBRE ═══ */
+  :root[data-theme="dark"]{
+    --bg:#0d1a21; --surface:#16262f; --border:#294551;
+    --primary:#3ba7d0; --primary-light:#12313f; --primary-dark:#8fd2ea;
+    --text:#e6eef2; --muted:#93aab7;
+    --danger:#e4675e;
+    --additive:#a791f0; --additive-light:#241d3a; --additive-dark:#cbbaf8;
+    --admin:#a791f0; --admin-dark:#cbbaf8; --green:#4fb166;
+  }
+  :root[data-theme="dark"] body{
+    background:
+      linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px),
+      var(--bg);
+    background-size:34px 34px, 34px 34px, auto; background-attachment:fixed;
+  }
+  :root[data-theme="dark"] .pv-input,:root[data-theme="dark"] .op-row input{background:var(--surface);color:var(--text)}
+  :root[data-theme="dark"] .op-row,:root[data-theme="dark"] .pv-drop{background:#122430}
+  :root[data-theme="dark"] .pv-table th{background:#132633;color:var(--muted)}
+  :root[data-theme="dark"] .pv-info{background:#0f2a1c;border-color:#2b6b46;color:#7fd196}
+  :root[data-theme="dark"] .pv-warn{background:#2b1c0f;border-color:#5a3a1a;color:#e0a64a}
+</style>
 </head>
 <body>
+  <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()" aria-label="Basculer le thème clair ou sombre" title="Thème clair / sombre">🌙</button>
+  <script>
+    function applyThemeIcon(){ var d=document.documentElement.getAttribute('data-theme')==='dark'; var b=document.getElementById('themeToggle'); if(b) b.textContent=d?'☀️':'🌙'; }
+    function toggleTheme(){ var d=document.documentElement.getAttribute('data-theme')==='dark'; var n=d?'light':'dark'; document.documentElement.setAttribute('data-theme',n); try{localStorage.setItem('theme',n);}catch(e){} applyThemeIcon(); }
+    applyThemeIcon();
+    try{ matchMedia('(prefers-color-scheme:dark)').addEventListener('change',function(e){ if(!localStorage.getItem('theme')){ document.documentElement.setAttribute('data-theme', e.matches?'dark':'light'); applyThemeIcon(); } }); }catch(e){}
+  </script>
   <div class="brand">
     <img src="usinage/petitgmp.png" alt="GMP Bordeaux" onerror="this.style.display='none'">
     <h1>Atelier GMP — IUT de Bordeaux</h1>
@@ -165,7 +223,7 @@
   </div>
 
   <footer>Atelier GMP — IUT Bordeaux</footer>
-  <div class="site-version">v2.16.2</div>
+  <div class="site-version">v3.0.0</div>
 
 <div class="pv-overlay" id="pvOverlay"><div class="pv-modal" id="pvModal"></div></div>
 <div class="pv-toast" id="pvToast"></div>
