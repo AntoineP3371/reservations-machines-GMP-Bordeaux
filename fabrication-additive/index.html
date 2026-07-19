@@ -842,14 +842,31 @@ let operateurs = [];         // [{name,code}]
 let projets = [];            // liste distincte (union étudiants + demandes)
 let _projetsEtu = [];        // projets issus de la liste des étudiants importés
 let _projetsDem = [];        // projets présents dans les demandes (ex. créés via « Autre projet… »)
+let _etuDem = {};            // { projet: [{nom,prenom}] } — étudiants issus des demandes (projets rajoutés à la volée)
 function rebuildProjets(){ projets = [...new Set([..._projetsEtu, ..._projetsDem])].sort((a,b)=>a.localeCompare(b)); }
 // Récupère les noms de projets présents dans les demandes (pour qu'un projet créé à la volée
 // via « Autre projet… » apparaisse bien dans les menus Suivi / dépôt, pas seulement s'il est
-// dans la liste des étudiants).
+// dans la liste des étudiants). On récupère aussi les noms d'étudiants associés à ces projets
+// pour les reproposer (un projet rajouté n'a aucun étudiant dans la table 'etudiants').
 async function loadProjetsDemandes(){
-  const {data,error} = await sb.from('demandes').select('projet');
-  _projetsDem = (!error && data) ? [...new Set(data.map(d=>(d.projet||'').trim()).filter(Boolean))] : [];
+  const {data,error} = await sb.from('demandes').select('projet,etudiant_nom,etudiant_prenom');
+  const rows = (!error && data) ? data : [];
+  _projetsDem = [...new Set(rows.map(d=>(d.projet||'').trim()).filter(Boolean))];
+  _etuDem = {};
+  rows.forEach(d=>{
+    const projet=(d.projet||'').trim(), nom=(d.etudiant_nom||'').trim(), prenom=(d.etudiant_prenom||'').trim();
+    if(!projet || !(nom||prenom)) return;
+    (_etuDem[projet] = _etuDem[projet] || []).push({nom, prenom});
+  });
   rebuildProjets();
+}
+// Liste dédupliquée des étudiants d'un projet : ceux de la liste importée + ceux vus dans les demandes.
+function etudiantsProjet(projet){
+  const map=new Map();
+  const add=e=>{ const k=(e.nom||'').toLowerCase()+'|'+(e.prenom||'').toLowerCase(); if(k!=='|' && !map.has(k)) map.set(k,{nom:e.nom||'',prenom:e.prenom||''}); };
+  etudiants.filter(e=>e.projet===projet).forEach(add);
+  (_etuDem[projet]||[]).forEach(add);
+  return [...map.values()].sort((a,b)=>(a.nom+a.prenom).localeCompare(b.nom+b.prenom));
 }
 let encadrantsList = [];     // liste distincte des noms d'encadrants
 let projetEncadrants = {};   // { projet: Set(noms encadrants) }
@@ -1020,7 +1037,7 @@ function buildEtudiantOptions(projet){
   autre.style.display='none';
   if(!projet){ esel.innerHTML="<option value=''>— Choisir d'abord un projet —</option>"; return; }
   if(projet==='__autre__'){ esel.innerHTML="<option value='__autre__'>Saisir un nom…</option>"; esel.value='__autre__'; autre.style.display='flex'; return; }
-  const list=etudiants.filter(e=>e.projet===projet).sort((a,b)=>(a.nom+a.prenom).localeCompare(b.nom+b.prenom));
+  const list=etudiantsProjet(projet);
   esel.innerHTML="<option value=''>— Choisir votre nom —</option>"+
     list.map(e=>"<option value='"+esc(e.nom+'|'+e.prenom)+"'>"+esc(e.prenom+' '+e.nom)+"</option>").join('')+
     "<option value='__autre__'>Autre (non listé)…</option>";
@@ -1259,7 +1276,7 @@ async function openLancerModal(id){
   }
   _lancerId=id;
   document.getElementById('lancerTitle').textContent="🖐️ Je m'en occupe — "+(d.fichier_nom||'');
-  document.getElementById('lancerMeta').textContent="n°"+numeroLabel(d)+" · "+(d.etudiant_prenom+' '+d.etudiant_nom)+" — "+d.projet+(d.bbox?" · 📐 "+d.bbox:"")+(encadrantsProjet(d.projet)?" · 👨‍🏫 "+encadrantsProjet(d.projet):"");
+  document.getElementById('lancerMeta').innerHTML="n°"+esc(numeroLabel(d))+" · "+esc(d.etudiant_prenom+' '+d.etudiant_nom)+" — "+esc(d.projet)+(d.bbox?" · 📐 "+esc(d.bbox):"")+(encadrantsProjet(d.projet)?" · 👨‍🏫 "+encadrantsProjetHtml(d.projet, d.encadrant_nom):"");
   document.getElementById('lancerAttInfo').style.display = (d.statut==='attente_info')?'none':'';
   const dv=d.duree_reelle_min||0;
   document.getElementById('lancerH').value = dv>0?Math.floor(dv/60):'';
@@ -1866,9 +1883,12 @@ async function saveLimites(){
 function isoDate(d){ return d.toISOString().slice(0,10); }
 // ─── Statistiques ───
 function openStats(){
-  const au=new Date(), du=new Date(); du.setFullYear(du.getFullYear()-1);
+  const au=new Date();
+  // Par défaut : depuis le 1er septembre précédent (début d'année universitaire).
+  // Année de rentrée = année en cours si on est déjà en/après septembre, sinon l'année précédente.
+  const anneeRentree = (au.getMonth() >= 8) ? au.getFullYear() : au.getFullYear()-1;
   document.getElementById('stAu').value=isoDate(au);
-  document.getElementById('stDu').value=isoDate(du);
+  document.getElementById('stDu').value=anneeRentree+"-09-01"; // date calendaire directe (évite le décalage UTC d'isoDate)
   openOverlay('ovStats'); loadStats();
 }
 function formationDe(d){
@@ -2067,7 +2087,7 @@ function onSuiviProjet(){
   const es=document.getElementById('setudiant');
   const prev=es.value;
   if(!projet){ es.innerHTML="<option value=''>— Choisir d'abord un projet —</option>"; return; }
-  const list=etudiants.filter(e=>e.projet===projet).sort((a,b)=>(a.nom+a.prenom).localeCompare(b.nom+b.prenom));
+  const list=etudiantsProjet(projet);
   es.innerHTML="<option value=''>— Choisir votre nom —</option>"+
     list.map(e=>"<option value='"+esc(e.nom+'|'+e.prenom)+"'>"+esc(e.prenom+' '+e.nom)+"</option>").join('');
   if(prev && [...es.options].some(o=>o.value===prev)) es.value=prev;
