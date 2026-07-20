@@ -100,6 +100,9 @@
   .slot-cell.disabled{background:var(--disabled-bg);border-left:3px solid var(--disabled-border)!important;cursor:default}
   .slot-cell.today-col.free{background:#e8f6fc}
   .slot-cell.today-col.disabled{background:#e8edf4}
+  /* Fond du jour en cours porté aussi par le <td> : évite une bande blanche sous les
+     cellules courtes quand une autre cellule de la ligne (réservation) allonge la ligne. */
+  td.day-col.today-col{background:#e8f6fc}
   .slot-time{font-size:.72rem;font-weight:700;color:var(--muted);letter-spacing:.03em;margin-bottom:3px}
   .slot-free-label{font-size:.78rem;color:var(--free-text);font-weight:600}
   .slot-name{font-size:.82rem;font-weight:700;color:#1e3a8a;line-height:1.3;word-break:break-word}
@@ -409,6 +412,7 @@
   :root[data-theme="dark"] .slot-cell.free{background:var(--surface)}
   :root[data-theme="dark"] .slot-cell.free:hover,:root[data-theme="dark"] .slot-cell.today-col.free{background:#1c3340}
   :root[data-theme="dark"] .slot-cell.today-col.disabled{background:#1a2832}
+  :root[data-theme="dark"] td.day-col.today-col{background:#1c3340}
   :root[data-theme="dark"] .slot-cell.drop-target{background:#1c3a4a!important}
   :root[data-theme="dark"] .slot-name,:root[data-theme="dark"] .slot-projet-nom{color:#8fb8f0}
   :root[data-theme="dark"] .slot-operateur{color:#b7c6d0}
@@ -2150,7 +2154,7 @@ function render(){
         var click=(bl||isPanne)?"":" onclick='book(\""+jsesc(machine)+"\",\""+fmt(day)+"\",\""+slot+"\")'";
         var dragAttrs=(bl||isPanne)?"":" ondragover='onSlotDragOver(event,\""+jsesc(key)+"\")' ondragleave='onSlotDragLeave(event)' ondrop='onSlotDrop(event,\""+jsesc(key)+"\")'";
         if(r && !bl && !isPanne) dragAttrs+=" draggable='true' ondragstart='onSlotDragStart(event,\""+jsesc(key)+"\")' ondragend='onSlotDragEnd()'";
-        html+="<td class='day-col' data-col='"+di+"'><div class='slot-cell "+cls+"'"+inlineStyle+click+dragAttrs+">"+adm+content+"</div></td>";
+        html+="<td class='day-col"+tc+"' data-col='"+di+"'><div class='slot-cell "+cls+"'"+inlineStyle+click+dragAttrs+">"+adm+content+"</div></td>";
       });
       html+="</tr>";
     });
